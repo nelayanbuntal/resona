@@ -28,15 +28,15 @@ local MODE = "atomic"     -- PILIH: "atomic" atau "retry"
 local base_dir = "/storage/emulated/0/Delta/Workspace/Chloe X"
 
 -- CONFIG PATHS
-local config_url          = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setstart"
+local config_url          = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setstarter"
 local save_dir            = base_dir .. "/Config"
 local save_file           = save_dir .. "/Chloe__Fish_It_.json"
 
-local back_config_url     = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setstart"
+local back_config_url     = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setstarter"
 local back_save_file      = save_dir .. "/Chloe_UPD_Fish_It_.json"
 
 -- *** NEW EXTRA CONFIG FILE ***
-local extra_config_url    = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setstart"
+local extra_config_url    = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setstarter"
 local extra_save_file     = save_dir .. "/Chloe_Fish_It_.json"
 
 -- POSITION HANDLING
