@@ -1,0 +1,169 @@
+-- =====================================================
+-- EXTREME+ HYBRID ULTRA FINAL FPS BOOST (MODULAR)
+-- Compatible with loader via GitHub raw
+-- Auto-batched optimization + Grayscale auto + Safe GUI
+-- =====================================================
+
+local FPSBoost = {}
+
+function FPSBoost:Enable()
+    local Lighting = game:GetService("Lighting")
+    local Terrain = workspace:FindFirstChild("Terrain")
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+
+    local sethiddenproperty = sethiddenproperty or set_hidden_property or set_hidden_prop
+
+    -- ========================
+    -- 1. REMOVE HEAVY LIGHTING EFFECTS
+    -- ========================
+    for _, effect in ipairs(Lighting:GetChildren()) do
+        if effect:IsA("BlurEffect")
+        or effect:IsA("SunRaysEffect")
+        or effect:IsA("DepthOfFieldEffect")
+        or effect:IsA("ColorCorrectionEffect")
+        or effect:IsA("BloomEffect") then
+            effect:Destroy()
+        end
+    end
+
+    -- ========================
+    -- 2. NATURAL GRAYSCALE AUTO
+    -- ========================
+    local cc = Lighting:FindFirstChild("GrayscaleDynamic") or Instance.new("ColorCorrectionEffect")
+    cc.Name = "GrayscaleDynamic"
+    cc.Saturation = -0.4
+    cc.Contrast = 0.2
+    cc.TintColor = Color3.fromRGB(200, 200, 200)
+    cc.Enabled = true
+    cc.Parent = Lighting
+
+    -- ========================
+    -- 3. LIGHTING OPTIMIZATION
+    -- ========================
+    Lighting.GlobalShadows = false
+    Lighting.ClockTime = 14
+    Lighting.Brightness = 2
+    Lighting.FogEnd = 1000000
+
+    -- ========================
+    -- 4. TERRAIN OPTIMIZATION
+    -- ========================
+    if Terrain then
+        Terrain.WaterWaveSize = 0
+        Terrain.WaterWaveSpeed = 0
+        Terrain.WaterReflectance = 0
+        Terrain.WaterTransparency = 0
+        if sethiddenproperty then
+            pcall(sethiddenproperty, Terrain, "Decoration", false)
+        end
+    end
+
+    -- ========================
+    -- 5. PART & MATERIAL OPTIMIZATION + LOD
+    -- ========================
+    local function optimizePart(obj)
+        if obj:IsA("BasePart") then
+            obj.Material = Enum.Material.Plastic
+            obj.CastShadow = false
+            obj.Reflectance = 0
+        end
+        if obj:IsA("SurfaceAppearance") then
+            pcall(function() obj:Destroy() end)
+        end
+        if obj:IsA("Decal") or obj:IsA("Texture") then
+            if obj.Parent and not obj.Parent:IsA("ScreenGui") and not obj.Parent:IsA("SurfaceGui") then
+                pcall(function() obj.Transparency = 1 end)
+            end
+        end
+        if obj:IsA("ParticleEmitter")
+        or obj:IsA("Smoke")
+        or obj:IsA("Fire")
+        or obj:IsA("Sparkles")
+        or obj:IsA("Trail") then
+            pcall(function() obj:Destroy() end)
+        end
+    end
+
+    local function batchOptimize(parts)
+        for i = 1, #parts do
+            optimizePart(parts[i])
+        end
+    end
+
+    -- ========================
+    -- 6. REMOVE AIR/WATER/GLASS
+    -- ========================
+    local function removeWaterGlass(obj)
+        if obj:IsA("BasePart") then
+            local mat = obj.Material
+            local name = obj.Name:lower()
+            if (mat == Enum.Material.Water or mat == Enum.Material.Glass) or
+               name:find("water") or name:find("fall") or name:find("cascade") or name:find("flow") then
+                pcall(function() obj:Destroy() end)
+            end
+        end
+    end
+
+    -- ========================
+    -- 7. INITIAL BATCH OPTIMIZATION
+    -- ========================
+    local allParts = workspace:GetDescendants()
+    local batchSize = 100
+    for i = 1, #allParts, batchSize do
+        task.spawn(function()
+            local sub = {}
+            for j = i, math.min(i + batchSize - 1, #allParts) do
+                table.insert(sub, allParts[j])
+            end
+            batchOptimize(sub)
+            for _, obj in ipairs(sub) do removeWaterGlass(obj) end
+        end)
+    end
+
+    -- LOD & MeshPartHeads
+    pcall(function() workspace.LevelOfDetail = Enum.ModelLevelOfDetail.Disabled end)
+    if sethiddenproperty then
+        pcall(function()
+            sethiddenproperty(workspace, "MeshPartHeads", Enum.MeshPartHeads.Disabled)
+        end)
+    end
+
+    -- ========================
+    -- 8. USER SETTINGS RENDER QUALITY
+    -- ========================
+    local success, UserSettings = pcall(function() return UserSettings() end)
+    if success and UserSettings then
+        local success2, UserGameSettings = pcall(function()
+            return UserSettings:GetService("UserGameSettings")
+        end)
+        if success2 and UserGameSettings then
+            pcall(function()
+                UserGameSettings.SavedQualityLevel = Enum.SavedQualitySetting.QualityLevel1
+            end)
+        end
+    end
+
+    -- ========================
+    -- 9. STREAMING / TELEPORT SUPPORT (BATCHED NEW PARTS)
+    -- ========================
+    local newPartsQueue = {}
+    workspace.DescendantAdded:Connect(function(obj)
+        table.insert(newPartsQueue, obj)
+    end)
+
+    RunService.Heartbeat:Connect(function()
+        if #newPartsQueue > 0 then
+            local batch = {}
+            for i = 1, math.min(50, #newPartsQueue) do
+                table.insert(batch, table.remove(newPartsQueue, 1))
+            end
+            batchOptimize(batch)
+            for _, obj in ipairs(batch) do removeWaterGlass(obj) end
+        end
+    end)
+
+    print("🔥 EXTREME+ HYBRID ULTRA FINAL FPS BOOST ENABLED (MODULAR)")
+end
+
+return FPSBoost
