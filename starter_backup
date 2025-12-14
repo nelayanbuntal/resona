@@ -1,0 +1,251 @@
+-- ============================================================
+--    CHLOE-X UNIVERSAL LOADER (Atomic Mode + Retry System)
+--    IMPROVED STRUCTURE + EXTRA CONFIG FILE SUPPORT
+-- ============================================================
+
+-- ================================
+-- SAFE PRINT
+-- ================================
+local function safe_print(...)
+    if print then print(...) end
+end
+
+-- ================================
+-- RANDOM POSITION STRING
+-- ================================
+local random_list = { "crtg","crtg2","crtg3","crtg4","crtg5","crtg6","crtg7","crtg8","crtg9","crtg10","crtg11","crtg12","crtg13","crtg14" }
+
+
+local function getRandomFrom(list)
+    return list[math.random(1, #list)]
+end
+
+-- ================================
+-- CONFIG & POSITION SETTINGS
+-- ================================
+local MODE = "atomic"     -- PILIH: "atomic" atau "retry"
+
+local base_dir = "/storage/emulated/0/Delta/Workspace/Chloe X"
+
+-- CONFIG PATHS
+local config_url          = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setghostfin"
+local save_dir            = base_dir .. "/Config"
+local save_file           = save_dir .. "/Chloe__Fish_It_.json"
+
+local back_config_url     = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setghostfin"
+local back_save_file      = save_dir .. "/Chloe_UPD_Fish_It_.json"
+
+-- *** NEW EXTRA CONFIG FILE ***
+local extra_config_url    = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setghostfin"
+local extra_save_file     = save_dir .. "/Chloe_Fish_It_.json"
+
+-- POSITION HANDLING
+if position == nil or position == "" then
+    position = getRandomFrom(random_list)   -- RANDOMIZED
+    safe_print("[Chloe-X] Position tidak didefinisikan, memakai random:", position)
+else
+    safe_print("[Chloe-X] Position external:", position)
+end
+
+local position_url        = "https://raw.githubusercontent.com/nelayanbuntal/nelayan/refs/heads/main/loct/eso"
+
+-- BACKUP POSITION RANDOMIZED
+local position_backup_rand = getRandomFrom(random_list)
+local position_backup     = "https://raw.githubusercontent.com/nelayanbuntal/nelayan/refs/heads/main/loct/eso"
+
+local position_dir        = base_dir .. "/FishIt"
+local position_file       = position_dir .. "/Position.json"
+
+-- ================================
+-- GAME SCRIPT TABLE
+-- ================================
+local games = {
+    [121864768012064] = "https://raw.githubusercontent.com/nelayanbuntal/nelayan/refs/heads/main/chx/Chloe-X-main/Games/FishIt.lua",
+    [123921593837160] = "https://raw.githubusercontent.com/nelayanbuntal/nelayan/refs/heads/main/chx/Chloe-X-main/Games/Climb%20And%20Jump.lua",
+    [108343567000516] = "https://raw.githubusercontent.com/nelayanbuntal/nelayan/refs/heads/main/chx/Chloe-X-main/Games/Climb%20And%20Jump%20Lego.lua",
+    [129827112113663] = "https://raw.githubusercontent.com/nelayanbuntal/nelayan/refs/heads/main/chx/Chloe-X-main/Games/Prscpt.lua",
+}
+
+-- ============================================================
+-- UNIVERSAL HTTP GET
+-- ============================================================
+local function http_get(url)
+    local ok1, res1 = pcall(function() return game:HttpGet(url) end)
+    if ok1 and res1 then return res1 end
+
+    local okH, HttpService = pcall(function() return game:GetService("HttpService") end)
+    if okH and HttpService then
+        local ok2, res2 = pcall(function() return HttpService:GetAsync(url) end)
+        if ok2 and res2 then return res2 end
+    end
+
+    local fallback = {
+        function(u) if request then return request({Url=u, Method="GET"}).Body end end,
+        function(u) if syn and syn.request then return syn.request({Url=u, Method="GET"}).Body end end,
+        function(u)
+            if http and http.request then
+                local r = http.request({url=u})
+                return r and (r.body or r.Body)
+            end
+        end,
+        function(u) if http_request then return http_request({Url=u, Method="GET"}).Body end end
+    }
+
+    for _, fn in ipairs(fallback) do
+        local ok, res = pcall(fn, url)
+        if ok and res then return res end
+    end
+
+    return nil
+end
+
+-- ============================================================
+-- FILE FUNCTIONS
+-- ============================================================
+local function ensure_dir(path)
+    if isfolder and makefolder then
+        if not isfolder(path) then pcall(makefolder, path) end
+    end
+end
+
+local function write_file(path, content)
+    if writefile then
+        pcall(writefile, path, content)
+        return
+    end
+    local f = io.open(path, "w")
+    if f then f:write(content) f:close() end
+end
+
+local function is_file_valid(path)
+    if not isfile then return true end
+    if not isfile(path) then return false end
+
+    local ok, data = pcall(readfile, path)
+    if not ok or not data or #data < 10 then return false end
+
+    return true
+end
+
+-- ============================================================
+-- RETRY MODE DOWNLOADER
+-- ============================================================
+local function download_file_retry(url, dir, path, attempts)
+    ensure_dir(dir)
+    attempts = attempts or 3
+
+    for i = 1, attempts do
+        safe_print("[Retry] Attempt", i, "→", path)
+
+        local data = http_get(url)
+        if data and #data > 0 then write_file(path, data) end
+
+        if is_file_valid(path) then
+            safe_print("[Retry] OK:", path)
+            return true
+        end
+
+        task.wait(0.25)
+    end
+
+    safe_print("[Retry] FAILED:", path)
+    return false
+end
+
+-- ============================================================
+-- ATOMIC MODE DOWNLOADER (ALL OR NOTHING)
+-- ============================================================
+local function atomic_download(list)
+    local tempFiles = {}
+
+    -- STEP 1: Download temp
+    for _, item in ipairs(list) do
+        ensure_dir(item.dir)
+
+        local tmp = item.path .. ".tmp"
+        table.insert(tempFiles, {tmp = tmp, real = item.path})
+
+        local data = http_get(item.url)
+        if not data or #data < 10 then
+            safe_print("[Atomic] ERROR (corrupt):", item.url)
+            return false
+        end
+
+        write_file(tmp, data)
+    end
+
+    -- STEP 2: Validate temp
+    for _, f in ipairs(tempFiles) do
+        if not is_file_valid(f.tmp) then
+            safe_print("[Atomic] Validation FAIL:", f.tmp)
+            return false
+        end
+    end
+
+    -- STEP 3: Move to final
+    for _, f in ipairs(tempFiles) do
+        local ok, data = pcall(readfile, f.tmp)
+        if ok and data then write_file(f.real, data) end
+    end
+
+    safe_print("[Atomic] ALL FILES OK")
+    return true
+end
+
+-- ============================================================
+-- MAIN LOADER
+-- ============================================================
+local function fallback_position()
+    safe_print("[Chloe-X] Position FAILED → using backup:", position_backup_rand)
+    download_file_retry(position_backup, position_dir, position_file, 3)
+end
+
+local function main()
+    safe_print("[Chloe-X] Starting loader...")
+    safe_print("[Chloe-X] Mode:", MODE)
+
+    -- =============================
+    -- FILES TO DOWNLOAD
+    -- =============================
+    local fileList = {
+        { url = config_url,       dir = save_dir,     path = save_file },
+        { url = back_config_url,  dir = save_dir,     path = back_save_file },
+        { url = position_url,     dir = position_dir, path = position_file },
+
+        -- EXTRA CONFIG FILE
+        { url = extra_config_url, dir = save_dir,     path = extra_save_file },
+    }
+
+    -- DOWNLOAD MODE
+    if MODE == "retry" then
+        for _, f in ipairs(fileList) do
+            local ok = download_file_retry(f.url, f.dir, f.path, 3)
+            if not ok and f.path == position_file then fallback_position() end
+        end
+
+    elseif MODE == "atomic" then
+        local ok = atomic_download(fileList)
+        if not ok then fallback_position() end
+    end
+
+    -- =============================
+    -- LOAD GAME SCRIPT
+    -- =============================
+    local scriptURL = games[game.PlaceId]
+    if not scriptURL then
+        return game.Players.LocalPlayer:Kick("Game tidak terdaftar di Chloe-X.")
+    end
+
+    safe_print("[Chloe-X] Loading game script...")
+
+    local body = http_get(scriptURL)
+    if not body then return safe_print("[Chloe-X] Script download FAILED") end
+
+    local fn, err = loadstring(body)
+    if not fn then return safe_print("[Chloe-X] Script error:", err) end
+
+    pcall(fn)
+    safe_print("[Chloe-X] EXECUTED ✓")
+end
+
+pcall(main)
