@@ -28,9 +28,9 @@ end
 local MODE = "atomic"
 local base_dir = "/storage/emulated/0/Delta/Workspace/Chloe X"
 
-local config_url          = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setisle"
-local back_config_url     = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setisle"
-local extra_config_url    = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setisle"
+local config_url          = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/trade"
+local back_config_url     = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/trade"
+local extra_config_url    = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/trade"
 
 local save_dir        = base_dir .. "/Config"
 local save_file       = save_dir .. "/Chloe__Fish_It_.json"
