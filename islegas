@@ -53,7 +53,7 @@ local position_file    = position_dir .. "/Position.json"
 
 -- GAME TABLE
 local games = {
-    [121864768012064] = "https://raw.githubusercontent.com/nelayanbuntal/nelayan/refs/heads/main/chx/Chloe-X-main/Games/FishIt.lua",
+    [121864768012064] = "https://raw.githubusercontent.com/MajestySkie/Chloe-X/refs/heads/main/Games/FishIt.lua",
     [123921593837160] = "https://raw.githubusercontent.com/nelayanbuntal/nelayan/refs/heads/main/chx/Chloe-X-main/Games/Climb And Jump.lua",
     [108343567000516] = "https://raw.githubusercontent.com/nelayanbuntal/nelayan/refs/heads/main/chx/Chloe-X-main/Games/Climb And Jump Lego.lua",
     [129827112113663] = "https://raw.githubusercontent.com/nelayanbuntal/nelayan/refs/heads/main/chx/Chloe-X-main/Games/Prscpt.lua",
