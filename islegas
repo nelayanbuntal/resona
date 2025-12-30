@@ -26,14 +26,15 @@ end
 -- CONFIGURATION
 -- ================================
 local MODE = "atomic"
-local base_dir = "/storage/emulated/0/Delta/Workspace/Chloe X"
+local base_dir = "/storage/emulated/0/Delta/Workspace/Chloe X/_Fish_It_"
 
 local config_url          = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setisle"
 local back_config_url     = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setisle"
 local extra_config_url    = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setisle"
 
-local save_dir        = base_dir .. "/Config"
-local save_file       = save_dir .. "/Chloe__Fish_It_.json"
+-- Path dan nama file config diubah sesuai permintaan
+local save_dir        = base_dir -- Lokasi penyimpanan konfigurasi
+local save_file       = save_dir .. "/conf.json" -- Nama file conf.json
 local back_save_file  = save_dir .. "/Chloe_UPD_Fish_It_.json"
 local extra_save_file = save_dir .. "/Chloe_Fish_It_.json"
 
@@ -182,9 +183,20 @@ local function fallback_position()
     download_file_retry(position_backup, position_dir, position_file, 3)
 end
 
+-- Menambahkan fungsi untuk menulis autoload.txt
+local function write_autoload()
+    local autoload_path = base_dir .. "/autoload.txt"
+    local content = "conf"  -- Isi file dengan "conf"
+    write_file(autoload_path, content)
+    safe_print("[Chloe-X] autoload.txt telah ditulis ✓")
+end
+
 local function main()
     safe_print("[Chloe-X] Starting loader...")
     safe_print("[Chloe-X] Mode:", MODE)
+
+    -- Menulis autoload.txt
+    write_autoload()
 
     local fileList = {
         { url = config_url,       dir = save_dir,     path = save_file },
