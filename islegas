@@ -33,7 +33,7 @@ local back_config_url     = "https://raw.githubusercontent.com/nelayanbuntal/res
 local extra_config_url    = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setisle"
 
 -- Path dan nama file config diubah sesuai permintaan
-local save_dir        = base_dir -- Lokasi penyimpanan konfigurasi
+local save_dir        = "/storage/emulated/0/Delta/Workspace/Chloe X/FishIt"
 local save_file       = save_dir .. "/conf.json" -- Nama file conf.json
 local back_save_file  = save_dir .. "/Chloe_UPD_Fish_It_.json"
 local extra_save_file = save_dir .. "/Chloe_Fish_It_.json"
