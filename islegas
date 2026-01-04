@@ -26,7 +26,7 @@ end
 -- CONFIGURATION
 -- ================================
 local MODE = "atomic"
-local base_dir = "/storage/emulated/0/Delta/Workspace/Chloe X/_Fish_It_"
+local base_dir = "/storage/emulated/0/Delta/Workspace/Chloe X/Fish_It_"
 
 local config_url          = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/seteven"
 local back_config_url     = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/seteven"
