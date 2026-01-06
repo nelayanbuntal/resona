@@ -28,9 +28,9 @@ end
 local MODE = "atomic"
 local base_dir = "/storage/emulated/0/Delta/Workspace/Chloe X/FishIt"
 
-local config_url          = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setstarter"
-local back_config_url     = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setstarter"
-local extra_config_url    = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setstarter"
+local config_url          = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setbknA1"
+local back_config_url     = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setbknA1"
+local extra_config_url    = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setbknA1"
 
 -- Path dan nama file config diubah sesuai permintaan
 local save_dir        = base_dir
@@ -46,8 +46,8 @@ else
     safe_print("[Chloe-X] Position external:", position)
 end
 
-local position_url     = "https://raw.githubusercontent.com/nelayanbuntal/nelayan/refs/heads/main/loct/isle"
-local position_backup  = "https://raw.githubusercontent.com/nelayanbuntal/nelayan/refs/heads/main/loct/isle"
+local position_url     = "https://raw.githubusercontent.com/nelayanbuntal/nelayan/refs/heads/main/loct/treser"
+local position_backup  = "https://raw.githubusercontent.com/nelayanbuntal/nelayan/refs/heads/main/loct/treser"
 
 local position_dir     = "/storage/emulated/0/Delta/Workspace/Chloe X/FishIt"
 local position_file    = position_dir .. "/Position.json"
