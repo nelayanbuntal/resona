@@ -46,8 +46,8 @@ else
     safe_print("[Chloe-X] Position external:", position)
 end
 
-local position_url     = "https://raw.githubusercontent.com/nelayanbuntal/nelayan/refs/heads/main/loct/isle"
-local position_backup  = "https://raw.githubusercontent.com/nelayanbuntal/nelayan/refs/heads/main/loct/isle"
+local position_url     = "https://raw.githubusercontent.com/nelayanbuntal/nelayan/refs/heads/main/loct/treser"
+local position_backup  = "https://raw.githubusercontent.com/nelayanbuntal/nelayan/refs/heads/main/loct/treser"
 
 local position_dir     = "/storage/emulated/0/Delta/Workspace/Chloe X/FishIt"
 local position_file    = position_dir .. "/Position.json"
