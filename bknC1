@@ -28,9 +28,9 @@ end
 local MODE = "atomic"
 local base_dir = "/storage/emulated/0/Delta/Workspace/Chloe X/FishIt"
 
-local config_url          = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setbknA1"
-local back_config_url     = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setbknA1"
-local extra_config_url    = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setbknA1"
+local config_url          = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setbknC1"
+local back_config_url     = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setbknC1"
+local extra_config_url    = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setbknC1"
 
 -- Path dan nama file config diubah sesuai permintaan
 local save_dir        = base_dir
