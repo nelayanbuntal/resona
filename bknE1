@@ -6,7 +6,7 @@
 -- ================================
 -- DOWNLOAD CONFIGURATION TOGGLE
 -- ================================
-local download_configuration = false  -- Set false untuk skip download config & position
+local download_configuration = true  -- Set false untuk skip download config & position
 
 -- ================================
 -- SAFE PRINT
