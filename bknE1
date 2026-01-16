@@ -6,7 +6,7 @@
 -- ================================
 -- DOWNLOAD CONFIGURATION TOGGLE
 -- ================================
-local download_configuration = false  -- Set false untuk skip download config & position
+local download_configuration = true  -- Set false untuk skip download config & position
 
 -- ================================
 -- SAFE PRINT
@@ -51,8 +51,8 @@ else
     safe_print("[Chloe-X] Position external:", position)
 end
 
-local position_url     = "https://raw.githubusercontent.com/nelayanbuntal/nelayan/refs/heads/main/loct/hutan"
-local position_backup  = "https://raw.githubusercontent.com/nelayanbuntal/nelayan/refs/heads/main/loct/hutan"
+local position_url     = "https://raw.githubusercontent.com/nelayanbuntal/nelayan/refs/heads/main/loct/ruin"
+local position_backup  = "https://raw.githubusercontent.com/nelayanbuntal/nelayan/refs/heads/main/loct/ruin"
 
 local position_dir     = "/storage/emulated/0/Delta/Workspace/Chloe X/FishIt"
 local position_file    = position_dir .. "/Position.json"
