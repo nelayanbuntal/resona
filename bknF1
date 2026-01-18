@@ -33,9 +33,9 @@ end
 local MODE = "atomic"
 local base_dir = "/storage/emulated/0/Delta/Workspace/Chloe X/FishIt"
 
-local config_url          = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setbknF1"
-local back_config_url     = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setbknF1"
-local extra_config_url    = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/setbknF1"
+local config_url          = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/trade"
+local back_config_url     = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/trade"
+local extra_config_url    = "https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/trade"
 
 -- Path dan nama file config diubah sesuai permintaan
 local save_dir        = base_dir
