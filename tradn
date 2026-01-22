@@ -139,7 +139,7 @@ print("")
 
 local CONFIG = {
     -- CHANGE THESE VALUES!
-    RECEIVER_USER_ID = 9936796231,  -- User ID of receiver account
+    RECEIVER_USER_ID = 9936906910,  -- User ID of receiver account
     TARGET_COINS = 50000000,        -- Target coins to send (50M)
     
     -- Trading Settings - OPTIMIZED FOR CALLBACK QUEUE
