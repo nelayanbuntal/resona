@@ -62,8 +62,8 @@ local CONFIG = {
     TARGET_COINS = 50000000,        -- Target coins to send (50M)
     
     -- Trading Settings - OPTIMIZED FOR CALLBACK QUEUE
-    TRADE_DELAY = 3,                -- Seconds between trades (reduced)
-    RETRY_DELAY = 0.3,              -- Seconds before retry (fast for callback)
+    TRADE_DELAY = 4,                -- Seconds between trades (reduced)
+    RETRY_DELAY = 4,              -- Seconds before retry (fast for callback)
     MAX_RETRIES = 100,              -- Max retries per fish (HIGH for callback queue)
     TIMEOUT = 2,                    -- Timeout for trade confirmation (reduced)
     
