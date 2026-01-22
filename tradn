@@ -1,0 +1,764 @@
+print("=== AUTO TRADE BY COINS - STANDALONE EDITION ===\n")
+
+-- ============================================================================
+--                              INITIALIZATION
+-- ============================================================================
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+print("🔄 Initializing modules...")
+
+-- Get Replion
+local replionModule = ReplicatedStorage.Packages._Index:FindFirstChild("ytrev_replion@2.0.0-rc.3")
+if not replionModule then
+    error("❌ Replion module not found")
+end
+local Replion = require(replionModule.replion)
+local Data = Replion.Client:WaitReplion("Data")
+
+-- Get Net module
+local Net = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net
+
+-- Get remotes
+local TradeRemote = Net["RF/InitiateTrade"]
+local FavoriteRemote = Net["RE/FavoriteItem"]
+local UnequipRemote = Net["RE/UnequipItem"]
+
+-- Get utilities
+local ItemUtility = nil
+local PlayerStatsUtility = nil
+
+local success1, result1 = pcall(function()
+    return require(ReplicatedStorage.Shared.ItemUtility)
+end)
+if success1 then
+    ItemUtility = result1
+    print("✅ ItemUtility loaded")
+else
+    error("❌ ItemUtility not found")
+end
+
+local success2, result2 = pcall(function()
+    return require(ReplicatedStorage.Shared.PlayerStatsUtility)
+end)
+if success2 then
+    PlayerStatsUtility = result2
+    print("✅ PlayerStatsUtility loaded")
+else
+    warn("⚠️ PlayerStatsUtility not found - using fallback")
+end
+
+print("")
+
+-- ============================================================================
+--                              CONFIGURATION
+-- ============================================================================
+
+local CONFIG = {
+    -- CHANGE THESE VALUES!
+    RECEIVER_USER_ID = 9850456083,  -- User ID of receiver account
+    TARGET_COINS = 50000000,        -- Target coins to send (50M)
+    
+    -- Trading Settings
+    TRADE_DELAY = 5,                -- Seconds between trades
+    RETRY_DELAY = 1,                -- Seconds before retry
+    MAX_RETRIES = 2,                -- Max retries per fish
+    TIMEOUT = 10,                   -- Timeout for trade confirmation
+    
+    -- Auto-Accept Settings (for receiver)
+    AUTO_ACCEPT_ENABLED = true,     -- Enable auto-accept for receiver
+    
+    -- Notification Settings
+    NOTIFY_YUMMU_AUTO = true,       -- Send notifications to Yummu Auto
+}
+
+local STATE = {
+    isReceiver = false,
+    isWorker = false,
+    currentUserId = LocalPlayer.UserId,
+    currentUsername = LocalPlayer.Name,
+    trading = false,
+    totalSent = 0,
+    totalSuccess = 0,
+    totalFailed = 0,
+    startTime = 0,
+}
+
+print(string.rep("=", 70))
+print("⚙️  CONFIGURATION")
+print(string.rep("=", 70))
+print("")
+print(string.format("Receiver User ID: %d", CONFIG.RECEIVER_USER_ID))
+print(string.format("Target Coins: %s", tostring(CONFIG.TARGET_COINS):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")))
+print(string.format("Trade Delay: %ds", CONFIG.TRADE_DELAY))
+print(string.format("Max Retries: %d", CONFIG.MAX_RETRIES))
+print("")
+print(string.rep("=", 70))
+print("")
+
+-- ============================================================================
+--                          UTILITY FUNCTIONS
+-- ============================================================================
+
+local function formatNumber(num)
+    return tostring(num):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+end
+
+local function itemExists(uuid)
+    local items = Data:GetExpect({ "Inventory", "Items" }) or {}
+    for _, item in ipairs(items) do
+        if item.UUID == uuid then
+            return true
+        end
+    end
+    return false
+end
+
+local function waitForTradeComplete(uuid, timeout)
+    local startTime = tick()
+    while tick() - startTime < timeout do
+        if not itemExists(uuid) then
+            return true
+        end
+        wait(0.2)
+    end
+    return false
+end
+
+local function getSellPrice(basePrice)
+    if not basePrice or basePrice <= 0 then
+        return 0
+    end
+    
+    if PlayerStatsUtility and PlayerStatsUtility.GetPlayerModifiers and PlayerStatsUtility.GetSellPrice then
+        local success, result = pcall(function()
+            local modifiers = PlayerStatsUtility:GetPlayerModifiers(LocalPlayer)
+            return PlayerStatsUtility:GetSellPrice(basePrice, modifiers)
+        end)
+        
+        if success and result then
+            return result
+        end
+    end
+    
+    return basePrice
+end
+
+local function notifyYummyAuto(message, isCompleted)
+    if not CONFIG.NOTIFY_YUMMU_AUTO then return end
+    
+    local status = isCompleted and "Completed-" or "Status-"
+    local fullMessage = status .. message
+    
+    print(string.format("\n📝 Yummu Auto Notification: %s", fullMessage))
+end
+
+-- ============================================================================
+--                          STEP 1: VALIDATE USER
+-- ============================================================================
+
+local function validateUser()
+    print(string.rep("=", 70))
+    print("👤 USER VALIDATION")
+    print(string.rep("=", 70))
+    print("")
+    print("Current User ID:", STATE.currentUserId)
+    print("Username:", STATE.currentUsername)
+    print("")
+    
+    if STATE.currentUserId == CONFIG.RECEIVER_USER_ID then
+        STATE.isReceiver = true
+        print("✅ Role: RECEIVER (Auto Accept Mode)")
+        print("")
+        return "receiver"
+    else
+        STATE.isWorker = true
+        print("✅ Role: WORKER (Trade Mode)")
+        print(string.format("   Target: User ID %d", CONFIG.RECEIVER_USER_ID))
+        print(string.format("   Target Coins: %s", formatNumber(CONFIG.TARGET_COINS)))
+        print("")
+        return "worker"
+    end
+end
+
+-- ============================================================================
+--                          AUTO ACCEPT (RECEIVER)
+-- ============================================================================
+
+local function startAutoAccept()
+    print(string.rep("=", 70))
+    print("🤖 AUTO ACCEPT TRADE - ACTIVATED")
+    print(string.rep("=", 70))
+    print("")
+    print("Waiting for trade requests...")
+    print("This account will auto-accept all trades")
+    print("")
+    
+    notifyYummyAuto("ReceiverMode-AutoAcceptActive", false)
+    
+    local acceptCount = 0
+    
+    task.spawn(function()
+        while true do
+            wait(0.5)
+            
+            pcall(function()
+                local prompt = LocalPlayer.PlayerGui:FindFirstChild("Prompt")
+                
+                if prompt and prompt:FindFirstChild("Blackout") then
+                    local blackout = prompt.Blackout
+                    
+                    if blackout:FindFirstChild("Options") then
+                        local yesButton = blackout.Options:FindFirstChild("Yes")
+                        
+                        if yesButton then
+                            acceptCount = acceptCount + 1
+                            print(string.format("[%s] ✅ Auto accepting trade #%d", 
+                                os.date("%H:%M:%S"), acceptCount))
+                            
+                            local pos = yesButton.AbsolutePosition
+                            local size = yesButton.AbsoluteSize
+                            local x = pos.X + size.X / 2
+                            local y = pos.Y + size.Y / 2 + 50
+                            
+                            game:GetService("VirtualInputManager"):SendMouseButtonEvent(x, y, 0, true, game, 1)
+                            wait(0.03)
+                            game:GetService("VirtualInputManager"):SendMouseButtonEvent(x, y, 0, false, game, 1)
+                            
+                            wait(1)
+                        end
+                    end
+                end
+            end)
+        end
+    end)
+    
+    print("✅ Auto Accept is running in background")
+    print("✅ This window will stay open - just leave it running")
+    print("")
+end
+
+-- ============================================================================
+--                    STEP 2: UNFAVORITE ALL FISH
+-- ============================================================================
+
+local function unfavoriteAllFish()
+    print(string.rep("=", 70))
+    print("💔 STEP 1: UNFAVORITING ALL FISH")
+    print(string.rep("=", 70))
+    print("")
+    
+    local items = Data:GetExpect({ "Inventory", "Items" }) or {}
+    local favoritedCount = 0
+    local unfavoritedCount = 0
+    
+    for _, item in ipairs(items) do
+        if item.Favorited then
+            local itemData = ItemUtility.GetItemDataFromItemType("Items", item.Id)
+            if itemData and itemData.Data and itemData.Data.Type == "Fish" then
+                favoritedCount = favoritedCount + 1
+            end
+        end
+    end
+    
+    if favoritedCount == 0 then
+        print("✅ No favorited fish found")
+        print("")
+        return true
+    end
+    
+    print(string.format("Found %d favorited fish", favoritedCount))
+    print("Unfavoriting...\n")
+    
+    for _, item in ipairs(items) do
+        if item.Favorited then
+            local itemData = ItemUtility.GetItemDataFromItemType("Items", item.Id)
+            
+            if itemData and itemData.Data and itemData.Data.Type == "Fish" then
+                local success = pcall(function()
+                    FavoriteRemote:FireServer(item.UUID)
+                end)
+                
+                if success then
+                    unfavoritedCount = unfavoritedCount + 1
+                    print(string.format("   [%d/%d] Unfavorited: %s", 
+                        unfavoritedCount, favoritedCount, itemData.Data.Name))
+                end
+                
+                wait(0.05)
+            end
+        end
+    end
+    
+    wait(0.5)
+    
+    print("")
+    print(string.rep("=", 70))
+    print(string.format("✅ Unfavorited %d fish", unfavoritedCount))
+    print(string.rep("=", 70))
+    print("")
+    
+    return true
+end
+
+-- ============================================================================
+--                    STEP 3: UNEQUIP ALL ITEMS
+-- ============================================================================
+
+local function unequipAllItems()
+    print(string.rep("=", 70))
+    print("🔓 STEP 2: UNEQUIPPING ALL ITEMS")
+    print(string.rep("=", 70))
+    print("")
+    
+    local items = Data:GetExpect({ "Inventory", "Items" }) or {}
+    local unequippedCount = 0
+    
+    for _, item in ipairs(items) do
+        if item.Equipped then
+            pcall(function()
+                UnequipRemote:FireServer(item.UUID)
+                unequippedCount = unequippedCount + 1
+            end)
+            wait(0.05)
+        end
+    end
+    
+    print(string.format("✅ Unequipped %d items", unequippedCount))
+    print("")
+    
+    return true
+end
+
+-- ============================================================================
+--                    STEP 4: GET FISH FOR COINS
+-- ============================================================================
+
+local function getFishForCoins()
+    print(string.rep("=", 70))
+    print("💰 STEP 3: CALCULATING FISH VALUES")
+    print(string.rep("=", 70))
+    print("")
+    
+    local items = Data:GetExpect({ "Inventory", "Items" }) or {}
+    local fishList = {}
+    
+    print(string.format("📦 Total items in inventory: %d", #items))
+    print("")
+    
+    local debugStats = {
+        totalItems = #items,
+        fishItems = 0,
+        favoritedFish = 0,
+        equippedFish = 0,
+        tradeableFish = 0,
+        nonFish = 0
+    }
+    
+    for _, item in ipairs(items) do
+        local itemData = ItemUtility.GetItemDataFromItemType("Items", item.Id)
+        
+        if itemData and itemData.Data then
+            if itemData.Data.Type == "Fish" then
+                debugStats.fishItems = debugStats.fishItems + 1
+                
+                if item.Favorited then
+                    debugStats.favoritedFish = debugStats.favoritedFish + 1
+                elseif item.Equipped then
+                    debugStats.equippedFish = debugStats.equippedFish + 1
+                else
+                    debugStats.tradeableFish = debugStats.tradeableFish + 1
+                    
+                    local basePrice = itemData.Data.Price or 0
+                    local sellPrice = getSellPrice(basePrice)
+                    
+                    table.insert(fishList, {
+                        UUID = item.UUID,
+                        Name = itemData.Data.Name,
+                        Price = sellPrice,
+                        Id = item.Id
+                    })
+                end
+            else
+                debugStats.nonFish = debugStats.nonFish + 1
+            end
+        end
+    end
+    
+    print("📊 Inventory Analysis:")
+    print(string.format("   Total Items: %d", debugStats.totalItems))
+    print(string.format("   Fish Items: %d", debugStats.fishItems))
+    print(string.format("   - Favorited: %d", debugStats.favoritedFish))
+    print(string.format("   - Equipped: %d", debugStats.equippedFish))
+    print(string.format("   - Tradeable: %d", debugStats.tradeableFish))
+    print(string.format("   Non-Fish: %d", debugStats.nonFish))
+    print("")
+    
+    table.sort(fishList, function(a, b)
+        return a.Price > b.Price
+    end)
+    
+    print(string.format("Found %d tradeable fish", #fishList))
+    print("")
+    
+    if #fishList > 0 then
+        print("Top 10 most expensive fish:")
+        for i = 1, math.min(10, #fishList) do
+            local fish = fishList[i]
+            print(string.format("   %2d. %-30s %s coins", i, fish.Name, formatNumber(fish.Price)))
+        end
+    else
+        print("⚠️  No tradeable fish found!")
+        if debugStats.favoritedFish > 0 then
+            print(string.format("   Hint: You have %d favorited fish. Unfavorite them first.", debugStats.favoritedFish))
+        end
+        if debugStats.equippedFish > 0 then
+            print(string.format("   Hint: You have %d equipped fish. Unequip them first.", debugStats.equippedFish))
+        end
+    end
+    
+    print("")
+    
+    local totalValue = 0
+    for _, fish in ipairs(fishList) do
+        totalValue = totalValue + fish.Price
+    end
+    
+    print(string.format("Total inventory value: %s coins", formatNumber(totalValue)))
+    print("")
+    
+    return fishList, totalValue
+end
+
+-- ============================================================================
+--                    STEP 5: SELECT FISH FOR TARGET
+-- ============================================================================
+
+local function selectFishForTarget(fishList, targetCoins)
+    print(string.rep("=", 70))
+    print("🎯 STEP 4: SELECTING FISH FOR TARGET")
+    print(string.rep("=", 70))
+    print("")
+    
+    print(string.format("Target: %s coins", formatNumber(targetCoins)))
+    print("")
+    
+    local selected = {}
+    local totalValue = 0
+    
+    for _, fish in ipairs(fishList) do
+        if totalValue >= targetCoins then
+            break
+        end
+        
+        table.insert(selected, fish)
+        totalValue = totalValue + fish.Price
+    end
+    
+    print(string.format("Selected %d fish", #selected))
+    print(string.format("Total value: %s coins", formatNumber(totalValue)))
+    
+    if totalValue < targetCoins then
+        print(string.format("⚠️  Warning: Only %.1f%% of target", (totalValue/targetCoins)*100))
+    else
+        print(string.format("✅ Reached %.1f%% of target", (totalValue/targetCoins)*100))
+    end
+    
+    print("")
+    
+    return selected, totalValue
+end
+
+-- ============================================================================
+--                    STEP 6: TRADE FISH
+-- ============================================================================
+
+local function tradeSingleFish(userId, fish, index, total)
+    local retries = 0
+    
+    while retries <= CONFIG.MAX_RETRIES do
+        local attempt = retries + 1
+        print(string.format("[%d/%d] %s (%s coins) - Attempt %d/%d", 
+            index, total, fish.Name, formatNumber(fish.Price), attempt, CONFIG.MAX_RETRIES + 1))
+        
+        local success, result = pcall(function()
+            return TradeRemote:InvokeServer(userId, fish.UUID)
+        end)
+        
+        if not success then
+            print("        ❌ ERROR:", tostring(result))
+            retries = retries + 1
+            if retries <= CONFIG.MAX_RETRIES then
+                wait(CONFIG.RETRY_DELAY)
+            end
+        elseif result == true then
+            print("        ⏳ Confirming...")
+            local confirmed = waitForTradeComplete(fish.UUID, CONFIG.TIMEOUT)
+            
+            if confirmed then
+                print("        ✅ SUCCESS")
+                STATE.totalSent = STATE.totalSent + fish.Price
+                STATE.totalSuccess = STATE.totalSuccess + 1
+                return true
+            else
+                if not itemExists(fish.UUID) then
+                    print("        ✅ SUCCESS (Item gone)")
+                    STATE.totalSent = STATE.totalSent + fish.Price
+                    STATE.totalSuccess = STATE.totalSuccess + 1
+                    return true
+                else
+                    retries = retries + 1
+                    if retries <= CONFIG.MAX_RETRIES then
+                        wait(CONFIG.RETRY_DELAY)
+                    end
+                end
+            end
+        else
+            print("        ❌ FAILED (Server returned false)")
+            STATE.totalFailed = STATE.totalFailed + 1
+            return false
+        end
+    end
+    
+    print("        ❌ FAILED after", CONFIG.MAX_RETRIES + 1, "attempts")
+    STATE.totalFailed = STATE.totalFailed + 1
+    return false
+end
+
+local function tradeAllFish(selectedFish)
+    print(string.rep("=", 70))
+    print("🚀 STEP 5: STARTING TRADE")
+    print(string.rep("=", 70))
+    print("")
+    print(string.format("Total fish to trade: %d", #selectedFish))
+    print(string.format("Delay per trade: %ds", CONFIG.TRADE_DELAY))
+    print(string.format("Estimated time: ~%d minutes", 
+        math.ceil((#selectedFish * CONFIG.TRADE_DELAY) / 60)))
+    print("")
+    
+    notifyYummyAuto(string.format("TradingStarted-%dfish", #selectedFish), false)
+    
+    STATE.trading = true
+    STATE.totalSent = 0
+    STATE.totalSuccess = 0
+    STATE.totalFailed = 0
+    STATE.startTime = tick()
+    
+    for i, fish in ipairs(selectedFish) do
+        if not STATE.trading then
+            print("\n⚠️ Trade stopped by user")
+            notifyYummyAuto("TradeStopped-ByUser", true)
+            break
+        end
+        
+        tradeSingleFish(CONFIG.RECEIVER_USER_ID, fish, i, #selectedFish)
+        
+        if i % 10 == 0 or i == #selectedFish then
+            print("")
+            print(string.format("📊 Progress: %d/%d (%.1f%%)", i, #selectedFish, (i/#selectedFish)*100))
+            print(string.format("💰 Sent: %s / %s coins", 
+                formatNumber(STATE.totalSent), formatNumber(CONFIG.TARGET_COINS)))
+            print("")
+            
+            notifyYummyAuto(string.format("Progress-%d%%-%scoins", 
+                math.floor((i/#selectedFish)*100), formatNumber(STATE.totalSent)), false)
+        end
+        
+        if i < #selectedFish then
+            wait(CONFIG.TRADE_DELAY)
+        end
+    end
+    
+    local duration = math.floor(tick() - STATE.startTime)
+    local minutes = math.floor(duration / 60)
+    local seconds = duration % 60
+    
+    STATE.trading = false
+    
+    return duration, minutes, seconds
+end
+
+-- ============================================================================
+--                    STEP 7: CHECK INVENTORY
+-- ============================================================================
+
+local function checkInventoryEmpty()
+    print(string.rep("=", 70))
+    print("📦 CHECKING INVENTORY STATUS")
+    print(string.rep("=", 70))
+    print("")
+    
+    local items = Data:GetExpect({ "Inventory", "Items" }) or {}
+    local fishCount = 0
+    
+    for _, item in ipairs(items) do
+        local itemData = ItemUtility.GetItemDataFromItemType("Items", item.Id)
+        if itemData and itemData.Data and itemData.Data.Type == "Fish" then
+            fishCount = fishCount + 1
+        end
+    end
+    
+    if fishCount == 0 then
+        print("✅ INVENTORY IS EMPTY - All fish traded!")
+        print("")
+        return true
+    else
+        print(string.format("⚠️  Remaining fish: %d", fishCount))
+        print("")
+        return false
+    end
+end
+
+-- ============================================================================
+--                    FINAL SUMMARY
+-- ============================================================================
+
+local function showFinalSummary(duration, minutes, seconds)
+    print(string.rep("=", 70))
+    print("🎉 TRADE COMPLETED")
+    print(string.rep("=", 70))
+    print("")
+    print("📊 Statistics:")
+    print(string.format("   ✅ Success:      %d", STATE.totalSuccess))
+    print(string.format("   ❌ Failed:       %d", STATE.totalFailed))
+    print(string.format("   📦 Total:        %d", STATE.totalSuccess + STATE.totalFailed))
+    print("")
+    print(string.format("💰 Coins Sent:      %s", formatNumber(STATE.totalSent)))
+    print(string.format("🎯 Target:          %s", formatNumber(CONFIG.TARGET_COINS)))
+    print(string.format("📈 Achievement:     %.1f%%", (STATE.totalSent/CONFIG.TARGET_COINS)*100))
+    print("")
+    print(string.format("⏱️  Duration:        %dm %ds", minutes, seconds))
+    if STATE.totalSuccess > 0 then
+        print(string.format("⏱️  Avg per fish:    %.1fs", duration / STATE.totalSuccess))
+    end
+    print(string.rep("=", 70))
+    print("")
+    
+    local isEmpty = checkInventoryEmpty()
+    
+    if isEmpty then
+        print("✅ All items traded successfully!")
+        notifyYummyAuto(string.format("TradeCompleted-%scoins", formatNumber(STATE.totalSent)), true)
+        
+        print("\n✅ DONE! You can now:")
+        print("   1. Switch to next bot manually")
+        print("   2. Or run script again on another account")
+        print("   3. Or check receiver account for items")
+    else
+        print("⚠️  Some items remain in inventory")
+        notifyYummyAuto(string.format("TradePartial-%scoins", formatNumber(STATE.totalSent)), true)
+    end
+    
+    print("")
+end
+
+-- ============================================================================
+--                          MAIN WORKFLOW
+-- ============================================================================
+
+local function startWorkerMode()
+    print(string.rep("=", 70))
+    print("🤖 WORKER MODE - STANDALONE TRADING")
+    print(string.rep("=", 70))
+    print("")
+    
+    notifyYummyAuto("WorkerMode-Starting", false)
+    
+    local step1 = unfavoriteAllFish()
+    if not step1 then
+        print("❌ Failed at Step 1")
+        notifyYummyAuto("Failed-UnfavoriteFish", true)
+        return
+    end
+    
+    local step2 = unequipAllItems()
+    if not step2 then
+        print("❌ Failed at Step 2")
+        notifyYummyAuto("Failed-UnequipItems", true)
+        return
+    end
+    
+    wait(1)
+    
+    local fishList, totalValue = getFishForCoins()
+    
+    if #fishList == 0 then
+        print("❌ No tradeable fish found!")
+        print("\n💡 Make sure:")
+        print("   - You have fish in inventory")
+        print("   - Fish are not favorited")
+        print("   - Fish are not equipped")
+        print("")
+        notifyYummyAuto("NoFishFound-Skipping", true)
+        return
+    end
+    
+    local selectedFish, selectedValue = selectFishForTarget(fishList, CONFIG.TARGET_COINS)
+    
+    if #selectedFish == 0 then
+        print("❌ No fish selected!")
+        notifyYummyAuto("NoFishSelected-Skipping", true)
+        return
+    end
+    
+    print("⏸️  Ready to start trading")
+    print(string.format("   Fish to trade: %d", #selectedFish))
+    print(string.format("   Total value: %s coins", formatNumber(selectedValue)))
+    print(string.format("   To receiver: User ID %d", CONFIG.RECEIVER_USER_ID))
+    print("")
+    print("Starting in 10 seconds...")
+    print("💡 To stop: Press Ctrl+C or call StopAutoTrade()")
+    print("")
+    
+    notifyYummyAuto(string.format("PreparingTrade-%dfish-%scoins", 
+        #selectedFish, formatNumber(selectedValue)), false)
+    
+    wait(10)
+    
+    local duration, minutes, seconds = tradeAllFish(selectedFish)
+    
+    showFinalSummary(duration, minutes, seconds)
+end
+
+-- ============================================================================
+--                          START SCRIPT
+-- ============================================================================
+
+print(string.rep("=", 70))
+print("🚀 AUTO TRADE BY COINS - STANDALONE EDITION")
+print(string.rep("=", 70))
+print("")
+print("ℹ️  This script runs WITHOUT API server")
+print("   - No HTTP requests")
+print("   - Pure local operation")
+print("   - Manual bot switching")
+print("")
+print(string.rep("=", 70))
+print("")
+
+local userRole = validateUser()
+
+if userRole == "receiver" then
+    if CONFIG.AUTO_ACCEPT_ENABLED then
+        startAutoAccept()
+    else
+        print("ℹ️  Auto-accept is disabled in config")
+        print("   You'll need to accept trades manually")
+        print("")
+    end
+elseif userRole == "worker" then
+    startWorkerMode()
+end
+
+-- Stop function
+getgenv().StopAutoTrade = function()
+    STATE.trading = false
+    notifyYummyAuto("StoppedByUser", true)
+    print("\n🛑 Auto trade stopped\n")
+end
+
+print("💡 Commands:")
+print("   StopAutoTrade() - Stop trading immediately")
+print("")
