@@ -1,4 +1,4 @@
-print("=== AUTO TRADE BY COINS - STANDALONE EDITION ===\n")
+print("=== AUTO TRADE BY COINS - STANDALONE OPTIMIZED ===\n")
 
 -- ============================================================================
 --                              INITIALIZATION
@@ -61,11 +61,15 @@ local CONFIG = {
     RECEIVER_USER_ID = 9850456083,  -- User ID of receiver account
     TARGET_COINS = 50000000,        -- Target coins to send (50M)
     
-    -- Trading Settings
-    TRADE_DELAY = 5,                -- Seconds between trades
-    RETRY_DELAY = 1,                -- Seconds before retry
-    MAX_RETRIES = 2,                -- Max retries per fish
-    TIMEOUT = 10,                   -- Timeout for trade confirmation
+    -- Trading Settings - OPTIMIZED FOR CALLBACK QUEUE
+    TRADE_DELAY = 3,                -- Seconds between trades (reduced)
+    RETRY_DELAY = 0.3,              -- Seconds before retry (fast for callback)
+    MAX_RETRIES = 100,              -- Max retries per fish (HIGH for callback queue)
+    TIMEOUT = 2,                    -- Timeout for trade confirmation (reduced)
+    
+    -- Progress Display
+    SHOW_EVERY_ATTEMPT = false,     -- Show every retry attempt (false = less spam)
+    SHOW_EVERY_N_RETRIES = 20,      -- Show progress every N retries
     
     -- Auto-Accept Settings (for receiver)
     AUTO_ACCEPT_ENABLED = true,     -- Enable auto-accept for receiver
@@ -83,17 +87,23 @@ local STATE = {
     totalSent = 0,
     totalSuccess = 0,
     totalFailed = 0,
+    totalRetries = 0,
     startTime = 0,
 }
 
 print(string.rep("=", 70))
-print("⚙️  CONFIGURATION")
+print("⚙️  CONFIGURATION - OPTIMIZED FOR CALLBACK QUEUE")
 print(string.rep("=", 70))
 print("")
 print(string.format("Receiver User ID: %d", CONFIG.RECEIVER_USER_ID))
 print(string.format("Target Coins: %s", tostring(CONFIG.TARGET_COINS):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")))
 print(string.format("Trade Delay: %ds", CONFIG.TRADE_DELAY))
-print(string.format("Max Retries: %d", CONFIG.MAX_RETRIES))
+print(string.format("Retry Delay: %.1fs (FAST for callback)", CONFIG.RETRY_DELAY))
+print(string.format("Max Retries: %d (HIGH for queue)", CONFIG.MAX_RETRIES))
+print("")
+print("⚠️  IMPORTANT: UUID collection AFTER unfavorite")
+print("   - No refresh during trading (prevents rate limit)")
+print("   - 100 retries for callback queue handling")
 print("")
 print(string.rep("=", 70))
 print("")
@@ -107,6 +117,8 @@ local function formatNumber(num)
 end
 
 local function itemExists(uuid)
+    -- DON'T refresh inventory - just check if UUID still exists
+    -- This is FAST and doesn't cause rate limit
     local items = Data:GetExpect({ "Inventory", "Items" }) or {}
     for _, item in ipairs(items) do
         if item.UUID == uuid then
@@ -122,7 +134,7 @@ local function waitForTradeComplete(uuid, timeout)
         if not itemExists(uuid) then
             return true
         end
-        wait(0.2)
+        wait(0.1)
     end
     return false
 end
@@ -194,6 +206,8 @@ local function startAutoAccept()
     print("")
     print("Waiting for trade requests...")
     print("This account will auto-accept all trades")
+    print("⚠️  IMPORTANT: Only 1 worker can trade at a time")
+    print("   Other workers will wait in callback queue")
     print("")
     
     notifyYummyAuto("ReceiverMode-AutoAcceptActive", false)
@@ -333,19 +347,25 @@ local function unequipAllItems()
 end
 
 -- ============================================================================
---                    STEP 4: GET FISH FOR COINS
+--      STEP 4: COLLECT ALL FISH UUIDs (AFTER UNFAVORITE - ONE TIME ONLY)
 -- ============================================================================
 
-local function getFishForCoins()
+local function collectAllFishUUIDs()
     print(string.rep("=", 70))
-    print("💰 STEP 3: CALCULATING FISH VALUES")
+    print("💰 STEP 3: COLLECTING FISH UUIDs (ONE TIME ONLY)")
     print(string.rep("=", 70))
     print("")
+    print("⚠️  CRITICAL: UUID Collection happens ONCE")
+    print("   ✅ AFTER unfavorite completed")
+    print("   ✅ All UUIDs stored in memory")
+    print("   ✅ NO refresh during trading (prevents rate limit)")
+    print("")
     
+    -- Get fresh inventory AFTER unfavorite is done
     local items = Data:GetExpect({ "Inventory", "Items" }) or {}
     local fishList = {}
     
-    print(string.format("📦 Total items in inventory: %d", #items))
+    print(string.format("📦 Scanning inventory: %d items", #items))
     print("")
     
     local debugStats = {
@@ -357,6 +377,7 @@ local function getFishForCoins()
         nonFish = 0
     }
     
+    -- Collect ALL tradeable fish UUIDs in memory
     for _, item in ipairs(items) do
         local itemData = ItemUtility.GetItemDataFromItemType("Items", item.Id)
         
@@ -374,6 +395,7 @@ local function getFishForCoins()
                     local basePrice = itemData.Data.Price or 0
                     local sellPrice = getSellPrice(basePrice)
                     
+                    -- Store UUID and metadata - NO MORE REFRESHES AFTER THIS
                     table.insert(fishList, {
                         UUID = item.UUID,
                         Name = itemData.Data.Name,
@@ -390,32 +412,44 @@ local function getFishForCoins()
     print("📊 Inventory Analysis:")
     print(string.format("   Total Items: %d", debugStats.totalItems))
     print(string.format("   Fish Items: %d", debugStats.fishItems))
-    print(string.format("   - Favorited: %d", debugStats.favoritedFish))
+    print(string.format("   - Favorited: %d %s", debugStats.favoritedFish, 
+        debugStats.favoritedFish > 0 and "⚠️  (should be 0!)" or ""))
     print(string.format("   - Equipped: %d", debugStats.equippedFish))
-    print(string.format("   - Tradeable: %d", debugStats.tradeableFish))
+    print(string.format("   - Tradeable: %d ✅ CACHED IN MEMORY", debugStats.tradeableFish))
     print(string.format("   Non-Fish: %d", debugStats.nonFish))
     print("")
     
+    -- Sort by price (highest first)
     table.sort(fishList, function(a, b)
         return a.Price > b.Price
     end)
     
-    print(string.format("Found %d tradeable fish", #fishList))
+    print(string.rep("=", 70))
+    print(string.format("✅ COLLECTED %d FISH UUIDs", #fishList))
+    print(string.rep("=", 70))
+    print("")
+    print("⚠️  From this point: NO MORE INVENTORY REFRESH")
+    print("   - All UUIDs are in memory")
+    print("   - Trading will use cached UUIDs")
+    print("   - This prevents rate limit issues")
     print("")
     
     if #fishList > 0 then
-        print("Top 10 most expensive fish:")
+        print("Top 10 most expensive fish (with UUIDs):")
         for i = 1, math.min(10, #fishList) do
             local fish = fishList[i]
-            print(string.format("   %2d. %-30s %s coins", i, fish.Name, formatNumber(fish.Price)))
+            print(string.format("   %2d. %-30s %10s coins [%s]", 
+                i, fish.Name, formatNumber(fish.Price), fish.UUID:sub(1, 12) .. "..."))
         end
     else
         print("⚠️  No tradeable fish found!")
         if debugStats.favoritedFish > 0 then
-            print(string.format("   Hint: You have %d favorited fish. Unfavorite them first.", debugStats.favoritedFish))
+            print(string.format("   Problem: %d fish still favorited!", debugStats.favoritedFish))
+            print("   Solution: Unfavorite step may have failed - try manual unfavorite")
         end
         if debugStats.equippedFish > 0 then
-            print(string.format("   Hint: You have %d equipped fish. Unequip them first.", debugStats.equippedFish))
+            print(string.format("   Problem: %d fish still equipped!", debugStats.equippedFish))
+            print("   Solution: Unequip step may have failed - try manual unequip")
         end
     end
     
@@ -426,7 +460,7 @@ local function getFishForCoins()
         totalValue = totalValue + fish.Price
     end
     
-    print(string.format("Total inventory value: %s coins", formatNumber(totalValue)))
+    print(string.format("Total cached value: %s coins", formatNumber(totalValue)))
     print("")
     
     return fishList, totalValue
@@ -457,7 +491,7 @@ local function selectFishForTarget(fishList, targetCoins)
         totalValue = totalValue + fish.Price
     end
     
-    print(string.format("Selected %d fish", #selected))
+    print(string.format("Selected %d fish (from %d cached)", #selected, #fishList))
     print(string.format("Total value: %s coins", formatNumber(totalValue)))
     
     if totalValue < targetCoins then
@@ -472,70 +506,134 @@ local function selectFishForTarget(fishList, targetCoins)
 end
 
 -- ============================================================================
---                    STEP 6: TRADE FISH
+--            STEP 6: TRADE FISH (100 RETRIES FOR CALLBACK QUEUE)
 -- ============================================================================
 
 local function tradeSingleFish(userId, fish, index, total)
     local retries = 0
+    local lastError = nil
+    local callbackQueue = false
     
     while retries <= CONFIG.MAX_RETRIES do
         local attempt = retries + 1
-        print(string.format("[%d/%d] %s (%s coins) - Attempt %d/%d", 
-            index, total, fish.Name, formatNumber(fish.Price), attempt, CONFIG.MAX_RETRIES + 1))
+        
+        -- Show progress intelligently
+        local shouldShow = false
+        if CONFIG.SHOW_EVERY_ATTEMPT then
+            shouldShow = true
+        elseif attempt == 1 or attempt == CONFIG.MAX_RETRIES + 1 then
+            shouldShow = true
+        elseif callbackQueue and attempt % CONFIG.SHOW_EVERY_N_RETRIES == 0 then
+            shouldShow = true
+        end
+        
+        if shouldShow then
+            local queueInfo = callbackQueue and " [IN QUEUE]" or ""
+            print(string.format("[%d/%d] %s (%s coins) - Attempt %d/%d%s", 
+                index, total, fish.Name, formatNumber(fish.Price), 
+                attempt, CONFIG.MAX_RETRIES + 1, queueInfo))
+        end
         
         local success, result = pcall(function()
             return TradeRemote:InvokeServer(userId, fish.UUID)
         end)
         
         if not success then
-            print("        ❌ ERROR:", tostring(result))
+            lastError = tostring(result)
+            
+            -- Detect callback/queue errors
+            if lastError:find("callback") or lastError:find("queue") or 
+               lastError:find("busy") or lastError:find("wait") then
+                if not callbackQueue then
+                    callbackQueue = true
+                    print("        ⏳ Receiver busy - entering callback queue...")
+                    print("           (Will retry up to 100 times)")
+                end
+                STATE.totalRetries = STATE.totalRetries + 1
+            else
+                -- Other error
+                if shouldShow then
+                    print(string.format("        ❌ ERROR: %s", lastError:sub(1, 50)))
+                end
+            end
+            
             retries = retries + 1
             if retries <= CONFIG.MAX_RETRIES then
                 wait(CONFIG.RETRY_DELAY)
             end
+            
         elseif result == true then
-            print("        ⏳ Confirming...")
+            -- Trade initiated successfully
+            if shouldShow or callbackQueue then
+                print("        ⏳ Trade accepted, confirming...")
+            end
+            
             local confirmed = waitForTradeComplete(fish.UUID, CONFIG.TIMEOUT)
             
             if confirmed then
-                print("        ✅ SUCCESS")
+                if callbackQueue then
+                    print(string.format("        ✅ SUCCESS (after %d queue retries)", retries))
+                else
+                    print("        ✅ SUCCESS")
+                end
                 STATE.totalSent = STATE.totalSent + fish.Price
                 STATE.totalSuccess = STATE.totalSuccess + 1
                 return true
             else
+                -- Double-check if item is actually gone
                 if not itemExists(fish.UUID) then
-                    print("        ✅ SUCCESS (Item gone)")
+                    print("        ✅ SUCCESS (confirmed via inventory)")
                     STATE.totalSent = STATE.totalSent + fish.Price
                     STATE.totalSuccess = STATE.totalSuccess + 1
                     return true
                 else
+                    -- Timeout but item still exists, retry
+                    if shouldShow then
+                        print("        ⏳ Timeout, retrying...")
+                    end
                     retries = retries + 1
                     if retries <= CONFIG.MAX_RETRIES then
                         wait(CONFIG.RETRY_DELAY)
                     end
                 end
             end
+            
         else
-            print("        ❌ FAILED (Server returned false)")
-            STATE.totalFailed = STATE.totalFailed + 1
-            return false
+            -- Server returned false
+            if shouldShow then
+                print("        ❌ Trade rejected by server")
+            end
+            retries = retries + 1
+            if retries <= CONFIG.MAX_RETRIES then
+                wait(CONFIG.RETRY_DELAY)
+            end
         end
     end
     
-    print("        ❌ FAILED after", CONFIG.MAX_RETRIES + 1, "attempts")
+    -- Failed after all retries
+    print(string.format("        ❌ FAILED after %d attempts", CONFIG.MAX_RETRIES + 1))
+    if lastError then
+        print(string.format("        Last error: %s", lastError:sub(1, 100)))
+    end
     STATE.totalFailed = STATE.totalFailed + 1
     return false
 end
 
 local function tradeAllFish(selectedFish)
     print(string.rep("=", 70))
-    print("🚀 STEP 5: STARTING TRADE")
+    print("🚀 STEP 5: TRADING (WITH CALLBACK QUEUE HANDLING)")
     print(string.rep("=", 70))
     print("")
     print(string.format("Total fish to trade: %d", #selectedFish))
     print(string.format("Delay per trade: %ds", CONFIG.TRADE_DELAY))
-    print(string.format("Estimated time: ~%d minutes", 
+    print(string.format("Max retries per fish: %d (for callback queue)", CONFIG.MAX_RETRIES))
+    print(string.format("Estimated minimum time: ~%d minutes", 
         math.ceil((#selectedFish * CONFIG.TRADE_DELAY) / 60)))
+    print("")
+    print("⚠️  IMPORTANT:")
+    print("   - All UUIDs already cached (no refresh)")
+    print("   - High retry count handles callback queue")
+    print("   - If receiver busy, worker waits in queue")
     print("")
     
     notifyYummyAuto(string.format("TradingStarted-%dfish", #selectedFish), false)
@@ -544,6 +642,7 @@ local function tradeAllFish(selectedFish)
     STATE.totalSent = 0
     STATE.totalSuccess = 0
     STATE.totalFailed = 0
+    STATE.totalRetries = 0
     STATE.startTime = tick()
     
     for i, fish in ipairs(selectedFish) do
@@ -555,17 +654,29 @@ local function tradeAllFish(selectedFish)
         
         tradeSingleFish(CONFIG.RECEIVER_USER_ID, fish, i, #selectedFish)
         
+        -- Show progress every 10 trades
         if i % 10 == 0 or i == #selectedFish then
             print("")
+            print(string.rep("-", 70))
             print(string.format("📊 Progress: %d/%d (%.1f%%)", i, #selectedFish, (i/#selectedFish)*100))
-            print(string.format("💰 Sent: %s / %s coins", 
-                formatNumber(STATE.totalSent), formatNumber(CONFIG.TARGET_COINS)))
+            print(string.format("💰 Sent: %s / %s coins (%.1f%%)", 
+                formatNumber(STATE.totalSent), formatNumber(CONFIG.TARGET_COINS),
+                (STATE.totalSent/CONFIG.TARGET_COINS)*100))
+            print(string.format("✅ Success: %d | ❌ Failed: %d | ⏳ Total Retries: %d", 
+                STATE.totalSuccess, STATE.totalFailed, STATE.totalRetries))
+            local elapsed = math.floor(tick() - STATE.startTime)
+            local remaining = math.ceil((elapsed / i) * (#selectedFish - i))
+            print(string.format("⏱️  Elapsed: %dm %ds | Remaining: ~%dm %ds", 
+                math.floor(elapsed/60), elapsed%60,
+                math.floor(remaining/60), remaining%60))
+            print(string.rep("-", 70))
             print("")
             
             notifyYummyAuto(string.format("Progress-%d%%-%scoins", 
                 math.floor((i/#selectedFish)*100), formatNumber(STATE.totalSent)), false)
         end
         
+        -- Wait between trades
         if i < #selectedFish then
             wait(CONFIG.TRADE_DELAY)
         end
@@ -624,6 +735,7 @@ local function showFinalSummary(duration, minutes, seconds)
     print(string.format("   ✅ Success:      %d", STATE.totalSuccess))
     print(string.format("   ❌ Failed:       %d", STATE.totalFailed))
     print(string.format("   📦 Total:        %d", STATE.totalSuccess + STATE.totalFailed))
+    print(string.format("   🔄 Total Retries: %d (callback queue handling)", STATE.totalRetries))
     print("")
     print(string.format("💰 Coins Sent:      %s", formatNumber(STATE.totalSent)))
     print(string.format("🎯 Target:          %s", formatNumber(CONFIG.TARGET_COINS)))
@@ -632,6 +744,9 @@ local function showFinalSummary(duration, minutes, seconds)
     print(string.format("⏱️  Duration:        %dm %ds", minutes, seconds))
     if STATE.totalSuccess > 0 then
         print(string.format("⏱️  Avg per fish:    %.1fs", duration / STATE.totalSuccess))
+    end
+    if STATE.totalRetries > 0 then
+        print(string.format("📊 Avg retries:     %.1f per fish", STATE.totalRetries / (STATE.totalSuccess + STATE.totalFailed)))
     end
     print(string.rep("=", 70))
     print("")
@@ -642,12 +757,13 @@ local function showFinalSummary(duration, minutes, seconds)
         print("✅ All items traded successfully!")
         notifyYummyAuto(string.format("TradeCompleted-%scoins", formatNumber(STATE.totalSent)), true)
         
-        print("\n✅ DONE! You can now:")
-        print("   1. Switch to next bot manually")
-        print("   2. Or run script again on another account")
-        print("   3. Or check receiver account for items")
+        print("\n✅ DONE! Next steps:")
+        print("   1. Switch to next bot manually (Yummu Auto)")
+        print("   2. Or check receiver account for items")
+        print("   3. Run script again on another worker")
     else
         print("⚠️  Some items remain in inventory")
+        print("   (May be favorited or failed trades)")
         notifyYummyAuto(string.format("TradePartial-%scoins", formatNumber(STATE.totalSent)), true)
     end
     
@@ -660,12 +776,13 @@ end
 
 local function startWorkerMode()
     print(string.rep("=", 70))
-    print("🤖 WORKER MODE - STANDALONE TRADING")
+    print("🤖 WORKER MODE - OPTIMIZED FOR CALLBACK QUEUE")
     print(string.rep("=", 70))
     print("")
     
     notifyYummyAuto("WorkerMode-Starting", false)
     
+    -- STEP 1: Unfavorite all fish
     local step1 = unfavoriteAllFish()
     if not step1 then
         print("❌ Failed at Step 1")
@@ -673,6 +790,7 @@ local function startWorkerMode()
         return
     end
     
+    -- STEP 2: Unequip all items
     local step2 = unequipAllItems()
     if not step2 then
         print("❌ Failed at Step 2")
@@ -682,19 +800,21 @@ local function startWorkerMode()
     
     wait(1)
     
-    local fishList, totalValue = getFishForCoins()
+    -- STEP 3: Collect ALL fish UUIDs (AFTER unfavorite - ONE TIME ONLY)
+    local fishList, totalValue = collectAllFishUUIDs()
     
     if #fishList == 0 then
         print("❌ No tradeable fish found!")
-        print("\n💡 Make sure:")
-        print("   - You have fish in inventory")
-        print("   - Fish are not favorited")
-        print("   - Fish are not equipped")
+        print("\n💡 Possible issues:")
+        print("   - Fish still favorited (check Step 1)")
+        print("   - Fish still equipped (check Step 2)")
+        print("   - No fish in inventory")
         print("")
         notifyYummyAuto("NoFishFound-Skipping", true)
         return
     end
     
+    -- STEP 4: Select fish for target
     local selectedFish, selectedValue = selectFishForTarget(fishList, CONFIG.TARGET_COINS)
     
     if #selectedFish == 0 then
@@ -708,15 +828,16 @@ local function startWorkerMode()
     print(string.format("   Total value: %s coins", formatNumber(selectedValue)))
     print(string.format("   To receiver: User ID %d", CONFIG.RECEIVER_USER_ID))
     print("")
-    print("Starting in 10 seconds...")
-    print("💡 To stop: Press Ctrl+C or call StopAutoTrade()")
+    print("Starting in 3 seconds...")
+    print("💡 To stop: Call StopAutoTrade() in console")
     print("")
     
     notifyYummyAuto(string.format("PreparingTrade-%dfish-%scoins", 
         #selectedFish, formatNumber(selectedValue)), false)
     
-    wait(10)
+    wait(3)
     
+    -- STEP 5: Trade all fish (using cached UUIDs)
     local duration, minutes, seconds = tradeAllFish(selectedFish)
     
     showFinalSummary(duration, minutes, seconds)
@@ -727,13 +848,14 @@ end
 -- ============================================================================
 
 print(string.rep("=", 70))
-print("🚀 AUTO TRADE BY COINS - STANDALONE EDITION")
+print("🚀 AUTO TRADE BY COINS - STANDALONE OPTIMIZED")
 print(string.rep("=", 70))
 print("")
-print("ℹ️  This script runs WITHOUT API server")
-print("   - No HTTP requests")
-print("   - Pure local operation")
-print("   - Manual bot switching")
+print("ℹ️  This version is OPTIMIZED for:")
+print("   ✅ No rate limit (UUID collection once)")
+print("   ✅ Callback queue handling (100 retries)")
+print("   ✅ Multiple workers → single receiver")
+print("   ✅ Pure local operation (no HTTP)")
 print("")
 print(string.rep("=", 70))
 print("")
