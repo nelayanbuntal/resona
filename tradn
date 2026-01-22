@@ -1,4 +1,85 @@
-print("=== AUTO TRADE BY COINS - STANDALONE OPTIMIZED ===\n")
+print("=== AUTO TRADE BY COINS - STANDALONE OPTIMIZED + ANTI-AFK ===\n")
+
+-- ============================================================================
+--                              ANTI-AFK SYSTEM
+-- ============================================================================
+
+local AntiAFK = {
+    enabled = false,
+    lastActivity = 0,
+    interval = 60,
+    connection = nil
+}
+
+function AntiAFK.start()
+    if AntiAFK.enabled then 
+        print("⚠️  Anti-AFK already running")
+        return 
+    end
+    
+    AntiAFK.enabled = true
+    AntiAFK.lastActivity = tick()
+    
+    print("╔═══════════════════════════════════════════════════╗")
+    print("║              ANTI-AFK ACTIVATED                   ║")
+    print("╚═══════════════════════════════════════════════════╝")
+    print("")
+    print(string.format("⏱️  Activity interval: %d seconds", AntiAFK.interval))
+    print("✅ Anti-AFK running in background")
+    print("💓 Will prevent 20-minute idle kick")
+    print("")
+    
+    -- Start anti-AFK loop
+    task.spawn(function()
+        while AntiAFK.enabled do
+            wait(AntiAFK.interval)
+            
+            if not AntiAFK.enabled then break end
+            
+            -- Simulate activity (safe methods)
+            pcall(function()
+                local vim = game:GetService("VirtualInputManager")
+                local camera = workspace.CurrentCamera
+                
+                -- Method 1: Minimal camera movement
+                local currentCF = camera.CFrame
+                camera.CFrame = currentCF * CFrame.Angles(0, math.rad(0.1), 0)
+                
+                -- Method 2: Space key tap (minimal impact)
+                vim:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+                wait(0.05)
+                vim:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+                
+                -- Method 3: Mouse movement (very small)
+                local UserInputService = game:GetService("UserInputService")
+                local mousePos = UserInputService:GetMouseLocation()
+                vim:SendMouseMoveEvent(
+                    mousePos.X + math.random(-1, 1), 
+                    mousePos.Y + math.random(-1, 1), 
+                    game
+                )
+            end)
+            
+            print(string.format("[%s] 💓 Anti-AFK heartbeat", os.date("%H:%M:%S")))
+            AntiAFK.lastActivity = tick()
+        end
+    end)
+end
+
+function AntiAFK.stop()
+    AntiAFK.enabled = false
+    print("[Anti-AFK] Stopped")
+end
+
+function AntiAFK.setInterval(seconds)
+    if seconds and seconds >= 10 then
+        AntiAFK.interval = seconds
+        print(string.format("[Anti-AFK] Interval set to: %d seconds", seconds))
+        return true
+    end
+    warn("[Anti-AFK] Interval must be at least 10 seconds")
+    return false
+end
 
 -- ============================================================================
 --                              INITIALIZATION
@@ -63,7 +144,7 @@ local CONFIG = {
     
     -- Trading Settings - OPTIMIZED FOR CALLBACK QUEUE
     TRADE_DELAY = 4,                -- Seconds between trades (reduced)
-    RETRY_DELAY = 2,              -- Seconds before retry (fast for callback)
+    RETRY_DELAY = 2,                -- Seconds before retry (fast for callback)
     MAX_RETRIES = 100,              -- Max retries per fish (HIGH for callback queue)
     TIMEOUT = 2,                    -- Timeout for trade confirmation (reduced)
     
@@ -76,6 +157,10 @@ local CONFIG = {
     
     -- Notification Settings
     NOTIFY_YUMMU_AUTO = true,       -- Send notifications to Yummu Auto
+    
+    -- Anti-AFK Settings
+    ANTI_AFK_ENABLED = true,        -- Enable anti-AFK system
+    ANTI_AFK_INTERVAL = 60,         -- Activity every 60 seconds (safe interval)
 }
 
 local STATE = {
@@ -92,7 +177,7 @@ local STATE = {
 }
 
 print(string.rep("=", 70))
-print("⚙️  CONFIGURATION - OPTIMIZED FOR CALLBACK QUEUE")
+print("⚙️  CONFIGURATION - OPTIMIZED FOR CALLBACK QUEUE + ANTI-AFK")
 print(string.rep("=", 70))
 print("")
 print(string.format("Receiver User ID: %d", CONFIG.RECEIVER_USER_ID))
@@ -101,9 +186,15 @@ print(string.format("Trade Delay: %ds", CONFIG.TRADE_DELAY))
 print(string.format("Retry Delay: %.1fs (FAST for callback)", CONFIG.RETRY_DELAY))
 print(string.format("Max Retries: %d (HIGH for queue)", CONFIG.MAX_RETRIES))
 print("")
+print("🛡️  ANTI-AFK SETTINGS:")
+print(string.format("   Enabled: %s", CONFIG.ANTI_AFK_ENABLED and "YES" or "NO"))
+print(string.format("   Interval: %d seconds", CONFIG.ANTI_AFK_INTERVAL))
+print("   Protection: Prevents 20-min idle kick")
+print("")
 print("⚠️  IMPORTANT: UUID collection AFTER unfavorite")
 print("   - No refresh during trading (prevents rate limit)")
 print("   - 100 retries for callback queue handling")
+print("   - Anti-AFK runs in background")
 print("")
 print(string.rep("=", 70))
 print("")
@@ -204,6 +295,13 @@ local function startAutoAccept()
     print("🤖 AUTO ACCEPT TRADE - ACTIVATED")
     print(string.rep("=", 70))
     print("")
+    
+    -- START ANTI-AFK FOR RECEIVER
+    if CONFIG.ANTI_AFK_ENABLED then
+        AntiAFK.setInterval(CONFIG.ANTI_AFK_INTERVAL)
+        AntiAFK.start()
+    end
+    
     print("Waiting for trade requests...")
     print("This account will auto-accept all trades")
     print("⚠️  IMPORTANT: Only 1 worker can trade at a time")
@@ -250,6 +348,7 @@ local function startAutoAccept()
     end)
     
     print("✅ Auto Accept is running in background")
+    print("✅ Anti-AFK is running in background")
     print("✅ This window will stay open - just leave it running")
     print("")
 end
@@ -634,6 +733,7 @@ local function tradeAllFish(selectedFish)
     print("   - All UUIDs already cached (no refresh)")
     print("   - High retry count handles callback queue")
     print("   - If receiver busy, worker waits in queue")
+    print("   - Anti-AFK running in background")
     print("")
     
     notifyYummyAuto(string.format("TradingStarted-%dfish", #selectedFish), false)
@@ -669,6 +769,7 @@ local function tradeAllFish(selectedFish)
             print(string.format("⏱️  Elapsed: %dm %ds | Remaining: ~%dm %ds", 
                 math.floor(elapsed/60), elapsed%60,
                 math.floor(remaining/60), remaining%60))
+            print(string.format("💓 Anti-AFK: %s", AntiAFK.enabled and "ACTIVE" or "INACTIVE"))
             print(string.rep("-", 70))
             print("")
             
@@ -748,6 +849,7 @@ local function showFinalSummary(duration, minutes, seconds)
     if STATE.totalRetries > 0 then
         print(string.format("📊 Avg retries:     %.1f per fish", STATE.totalRetries / (STATE.totalSuccess + STATE.totalFailed)))
     end
+    print(string.format("💓 Anti-AFK Status: %s", AntiAFK.enabled and "ACTIVE" or "STOPPED"))
     print(string.rep("=", 70))
     print("")
     
@@ -776,17 +878,24 @@ end
 
 local function startWorkerMode()
     print(string.rep("=", 70))
-    print("🤖 WORKER MODE - OPTIMIZED FOR CALLBACK QUEUE")
+    print("🤖 WORKER MODE - OPTIMIZED FOR CALLBACK QUEUE + ANTI-AFK")
     print(string.rep("=", 70))
     print("")
     
     notifyYummyAuto("WorkerMode-Starting", false)
+    
+    -- START ANTI-AFK FIRST
+    if CONFIG.ANTI_AFK_ENABLED then
+        AntiAFK.setInterval(CONFIG.ANTI_AFK_INTERVAL)
+        AntiAFK.start()
+    end
     
     -- STEP 1: Unfavorite all fish
     local step1 = unfavoriteAllFish()
     if not step1 then
         print("❌ Failed at Step 1")
         notifyYummyAuto("Failed-UnfavoriteFish", true)
+        AntiAFK.stop()
         return
     end
     
@@ -795,6 +904,7 @@ local function startWorkerMode()
     if not step2 then
         print("❌ Failed at Step 2")
         notifyYummyAuto("Failed-UnequipItems", true)
+        AntiAFK.stop()
         return
     end
     
@@ -811,6 +921,7 @@ local function startWorkerMode()
         print("   - No fish in inventory")
         print("")
         notifyYummyAuto("NoFishFound-Skipping", true)
+        AntiAFK.stop()
         return
     end
     
@@ -820,6 +931,7 @@ local function startWorkerMode()
     if #selectedFish == 0 then
         print("❌ No fish selected!")
         notifyYummyAuto("NoFishSelected-Skipping", true)
+        AntiAFK.stop()
         return
     end
     
@@ -827,6 +939,7 @@ local function startWorkerMode()
     print(string.format("   Fish to trade: %d", #selectedFish))
     print(string.format("   Total value: %s coins", formatNumber(selectedValue)))
     print(string.format("   To receiver: User ID %d", CONFIG.RECEIVER_USER_ID))
+    print(string.format("   Anti-AFK: %s", CONFIG.ANTI_AFK_ENABLED and "ENABLED" or "DISABLED"))
     print("")
     print("Starting in 3 seconds...")
     print("💡 To stop: Call StopAutoTrade() in console")
@@ -841,6 +954,10 @@ local function startWorkerMode()
     local duration, minutes, seconds = tradeAllFish(selectedFish)
     
     showFinalSummary(duration, minutes, seconds)
+    
+    -- Stop Anti-AFK after trading completes
+    print("\n🛡️  Stopping Anti-AFK...")
+    AntiAFK.stop()
 end
 
 -- ============================================================================
@@ -848,7 +965,7 @@ end
 -- ============================================================================
 
 print(string.rep("=", 70))
-print("🚀 AUTO TRADE BY COINS - STANDALONE OPTIMIZED")
+print("🚀 AUTO TRADE BY COINS - STANDALONE OPTIMIZED + ANTI-AFK")
 print(string.rep("=", 70))
 print("")
 print("ℹ️  This version is OPTIMIZED for:")
@@ -856,6 +973,7 @@ print("   ✅ No rate limit (UUID collection once)")
 print("   ✅ Callback queue handling (100 retries)")
 print("   ✅ Multiple workers → single receiver")
 print("   ✅ Pure local operation (no HTTP)")
+print("   ✅ Anti-AFK protection (prevents 20-min kick)")
 print("")
 print(string.rep("=", 70))
 print("")
@@ -869,6 +987,12 @@ if userRole == "receiver" then
         print("ℹ️  Auto-accept is disabled in config")
         print("   You'll need to accept trades manually")
         print("")
+        
+        -- Still start anti-AFK for receiver
+        if CONFIG.ANTI_AFK_ENABLED then
+            AntiAFK.setInterval(CONFIG.ANTI_AFK_INTERVAL)
+            AntiAFK.start()
+        end
     end
 elseif userRole == "worker" then
     startWorkerMode()
@@ -877,10 +1001,19 @@ end
 -- Stop function
 getgenv().StopAutoTrade = function()
     STATE.trading = false
+    AntiAFK.stop()
     notifyYummyAuto("StoppedByUser", true)
-    print("\n🛑 Auto trade stopped\n")
+    print("\n🛑 Auto trade stopped")
+    print("🛡️  Anti-AFK stopped")
+    print("")
 end
 
 print("💡 Commands:")
-print("   StopAutoTrade() - Stop trading immediately")
+print("   StopAutoTrade() - Stop trading and anti-AFK immediately")
+print("")
+print("🛡️  Anti-AFK Features:")
+print("   - Automatic activity every 60 seconds")
+print("   - Prevents 20-minute idle kick")
+print("   - Camera movement + keyboard input")
+print("   - Runs in background during trading")
 print("")
