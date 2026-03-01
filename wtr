@@ -1,8 +1,7 @@
 print("halo mas")
 
 
-_G.Config={UserID="d288983e-1549-4ee5-ac5e-3a8f7d88f6d9",discord_id="1384584067319730226",Note="Pc"}local s;for i=1,5 do s=pcall(function()loadstring(game:HttpGet("https://cdn.yummydata.click/scripts/fishit"))()end)if s then break end wait(5)end
-
+loadstring(game:HttpGet("https://raw.githubusercontent.com/FnDXueyi/list/refs/heads/main/game"))()
 _G.FishItConfig = _G.FishItConfig or {
     ["Fishing"] = {
         ["Auto Perfect"] = false,
