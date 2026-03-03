@@ -16,12 +16,12 @@ _G.FishItConfig = _G.FishItConfig or {
             -- {Tier = "Secret", Variant = "Leviathan Rage"},  -- Tier + Variant
         },
 
-        ["Auto Accept Trade"] = false,
-        ["Auto Friend Request"] = false,
+        ["Auto Accept Trade"] = true,
+        ["Auto Friend Request"] = true,
     },
     ["Auto Trade"] = {
-        ["Enabled"] = false,
-        ["Whitelist Username"] = {"MiftahT420","IlhamB971"},
+        ["Enabled"] = true,
+        ["Whitelist Username"] = {"IlhamB971"},
         ["Category Fish"] = {
             "Secret",
             -- {Tier = "Mythic", Variant = "Stone"}, -- Tier + Variant
@@ -144,9 +144,9 @@ _G.FishItConfig = _G.FishItConfig or {
         ["Endgame"] = "Element Rod",
     },
 
-    ["ExtremeFpsBoost"] = true,
-    ["UltimatePerformance"] = false,
-    ["Disable3DRender"] = true,
+    ["ExtremeFpsBoost"] = false,
+    ["UltimatePerformance"] = true,
+    ["Disable3DRender"] = false,
     ["AutoRemovePlayer"] = true,
 
     ["AutoReconnect"] = false,
