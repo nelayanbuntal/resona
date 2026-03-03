@@ -1,6 +1,7 @@
 print("halo mas")
 
 
+_G.Config={UserID="d288983e-1549-4ee5-ac5e-3a8f7d88f6d9",discord_id="1384584067319730226",Note="Pc"}local s;for i=1,5 do s=pcall(function()loadstring(game:HttpGet("https://cdn.yummydata.click/scripts/fishit"))()end)if s then break end wait(5)end
 
 _G.FishItConfig = _G.FishItConfig or {
     ["Fishing"] = {
@@ -16,11 +17,11 @@ _G.FishItConfig = _G.FishItConfig or {
             -- {Tier = "Secret", Variant = "Leviathan Rage"},  -- Tier + Variant
         },
 
-        ["Auto Accept Trade"] = true,
-        ["Auto Friend Request"] = true,
+        ["Auto Accept Trade"] = false,
+        ["Auto Friend Request"] = false,
     },
     ["Auto Trade"] = {
-        ["Enabled"] = true,
+        ["Enabled"] = false,
         ["Whitelist Username"] = {"IlhamB971"},
         ["Category Fish"] = {
             "Secret",
@@ -147,5 +148,3 @@ _G.FishItConfig = _G.FishItConfig or {
     ["HideGUI"] = false,
     ["EXIT_MAP_IF_DISCONNECT"] = false,
 }
-
-print("sukses mas !")
