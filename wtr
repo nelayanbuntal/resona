@@ -95,11 +95,12 @@ _G.FishItConfig = _G.FishItConfig or {
         },
     },
     ["Enchant"] = {
-        ["Auto Enchant"] = false,
-        ["Roll Enchant"] = false,
-        ["Evolved Roll Enchant"] = false,
+        ["Auto Enchant"] = true,
+        ["Roll Enchant"] = true,
+        ["Evolved Roll Enchant"] = true,
         ["Enchant List"] = {
-            "Reeler I"
+            ""Mutation Hunter II",
+            ""Mutation Hunter III"
         },
         ["Second Enchant"] = false,
         ["Allowed Sacrifice"] = {
