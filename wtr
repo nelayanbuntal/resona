@@ -99,8 +99,8 @@ _G.FishItConfig = _G.FishItConfig or {
         ["Roll Enchant"] = true,
         ["Evolved Roll Enchant"] = true,
         ["Enchant List"] = {
-            ""Mutation Hunter II",
-            ""Mutation Hunter III"
+            "Mutation Hunter II",
+            "Mutation Hunter III"
         },
         ["Second Enchant"] = false,
         ["Allowed Sacrifice"] = {
