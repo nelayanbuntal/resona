@@ -60,9 +60,12 @@ _G.FishItConfig = _G.FishItConfig or {
         ["Minimum Rod"] = "Astral Rod",
     },
     ["WebHook"] = {
-        ["Link Webhook"] = "",
-        ["Auto Sending"] = false,
-        ["Category"] = {"Secret"},
+        ["Link Webhook"] = "https://discord.com/api/webhooks/1481237223700561952/ndlAAwPkYIq_depETo5fl-s-txzzi7qc78f-77sXyDXVlmt2742N5dsJi45F70ia4rrc",
+        ["Auto Sending"] = true,
+        ["Category"] = {
+        "Secret",
+            {Name = "Ruby", Variant = "Gemstone"},
+        },
 
         ["Link Webhook Quest Complete"] = "",
     },
