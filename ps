@@ -1,153 +1,117 @@
 #!/usr/bin/env lua
 --[[
-  Private Server Client - Android (Termux + Lua)
-  Simpan di: /storage/emulated/0/Download/WinterHub/client.lua
+  ps.lua - Private Server Auto Claim
+  ====================================
+  Sekali run → otomatis claim link → tulis auto_rejoin.conf → selesai.
+  Tidak perlu argumen. Tidak perlu input apapun.
 
-  Cara pakai:
-    lua client.lua claim    -> ambil link & tulis ke auto_rejoin.conf
-    lua client.lua release  -> kembalikan link ke pool
-    lua client.lua status   -> lihat status server
-    lua client.lua show     -> tampilkan link yang sedang aktif
+  Install & run:
+    curl -L -o ps.lua https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/ps && lua ps.lua
+
+  Update script:
+    curl -L -o ps.lua https://raw.githubusercontent.com/nelayanbuntal/resona/refs/heads/main/ps && lua ps.lua
 ]]
 
--- ─────────────────────────────────────────
--- KONFIGURASI - HANYA server_url yang perlu diubah
--- device_id otomatis di-generate & disimpan permanen per device
--- ─────────────────────────────────────────
+-- ══════════════════════════════════════════════════════
+--  KONFIGURASI — ubah SERVER_URL sesuai cs50.dev kamu
+-- ══════════════════════════════════════════════════════
 
-local CONFIG = {
-  server_url     = "https://bookish-computing-machine-g4v964w7xxg739v96-5000.app.github.dev/",
-  conf_path      = "/storage/emulated/0/Download/WinterHub/auto_rejoin.conf",
-  device_id_file = "/data/data/com.termux/files/home/.device_id",
-  state_file     = "/data/data/com.termux/files/home/.ps_client_state",
-  max_retries    = 5,
-  retry_min_ms   = 500,
-  retry_max_ms   = 3000,
-}
+local SERVER_URL     = "https://bookish-computing-machine-g4v9647xg739v96-5000.app.github.dev"
+local CONF_PATH      = "/storage/emulated/0/Download/WinterHub/auto_rejoin.conf"
+local DEVICE_ID_FILE = "/data/data/com.termux/files/home/.device_id"
+local STATE_FILE     = "/data/data/com.termux/files/home/.ps_state"
+local MAX_RETRIES    = 8
+local RETRY_MIN_MS   = 300
+local RETRY_MAX_MS   = 2500
 
--- ─────────────────────────────────────────
--- Helpers
--- ─────────────────────────────────────────
+-- ══════════════════════════════════════════════════════
+--  UTILS
+-- ══════════════════════════════════════════════════════
 
 local function exec(cmd)
-  local h = io.popen(cmd .. " 2>&1")
-  local r = h:read("*a")
-  h:close()
-  return (r or ""):gsub("%s+$", "")
+  local h = io.popen(cmd .. " 2>/dev/null")
+  local r = h:read("*a"); h:close()
+  return (r or ""):match("^%s*(.-)%s*$")  -- trim
 end
 
 local function sleep_ms(ms)
   os.execute(string.format("sleep %.3f", ms / 1000))
 end
 
-local function random_jitter(lo, hi)
-  -- Seed dari PID + waktu + serial agar tiap device benar-benar beda
-  -- Ini penting saat sync mode: semua device start di waktu yang sama
-  local pid  = tonumber(exec("echo $$")) or 0
-  local seed = os.time() * 1000 + pid * 7 + (os.clock() * 1e6) % 1000
-  math.randomseed(math.floor(seed) % 2147483647)
+local function jitter(lo, hi)
+  local pid  = tonumber(exec("sh -c 'echo $$'")) or 1
+  local seed = (os.time() * 1000 + pid * 13 + math.floor((os.clock() * 1e5)) % 997)
+  math.randomseed(seed % 2147483647)
   return math.random(lo, hi)
 end
 
-local function curl_get(url)
-  return exec(string.format('curl -s --max-time 15 "%s"', url))
+local function curl(url)
+  return exec(string.format('curl -s --max-time 15 --retry 2 "%s"', url))
 end
 
-local function json_str(t, k)  return t:match('"'..k..'":%s*"([^"]*)"') end
-local function json_num(t, k)
-  local v = t:match('"'..k..'":%s*(%d+)') return v and tonumber(v) or nil
-end
-local function json_bool(t, k)
+-- JSON mini-parser (tidak butuh library eksternal)
+local function jstr(t, k)  return t:match('"'..k..'":%s*"([^"]*)"') end
+local function jnum(t, k)  local v = t:match('"'..k..'":%s*(%d+)'); return v and tonumber(v) end
+local function jbool(t, k)
   local v = t:match('"'..k..'":%s*(true|false)')
-  if v == "true" then return true elseif v == "false" then return false end
+  return v == "true" and true or (v == "false" and false or nil)
 end
 
--- ─────────────────────────────────────────
--- Auto Device ID
--- ─────────────────────────────────────────
+-- ══════════════════════════════════════════════════════
+--  DEVICE ID — otomatis dari ro.serialno / MAC / boot_id
+-- ══════════════════════════════════════════════════════
 
-local function generate_device_id()
-  --[[
-    Strategi ID (dari screenshot: ro.serialno unik per cloud phone instance):
-      1. ro.serialno  → primary, unik per instance (CONFIRMED dari screenshot)
-      2. MAC wlan0    → fallback kalau serial kosong/unknown
-      3. boot_id      → last resort (berubah tiap reboot, tapi unik)
-
-    Hash semua ke "dev_XXXXXXXX" lalu simpan permanen di ~/.device_id
-    Tidak akan berubah selama file tersebut ada.
-  ]]
-  local function get(cmd)
+local function make_device_id()
+  local function try(cmd)
     local v = exec(cmd)
-    if v ~= "" and v ~= "unknown" and not v:find("No such") and not v:find("error") then
-      return v
-    end
-    return nil
+    if v ~= "" and v ~= "unknown" and #v > 3 then return v end
   end
 
-  -- 1. Serial number (primary — terbukti unik di cloud phone)
-  local serial = get("getprop ro.serialno 2>/dev/null")
-  if serial then
-    -- Langsung pakai serial sebagai ID (sudah unik, tidak perlu hash)
-    local id = "dev_" .. serial:gsub("[^%w]", ""):sub(1, 16)
-    return id
-  end
+  -- 1. Serial number (primary, terbukti unik per cloud-phone instance)
+  local s = try("getprop ro.serialno")
+  if s then return "dev_" .. s:gsub("[^%w]",""):sub(1,20) end
 
   -- 2. MAC wlan0 (fallback)
-  local mac = get("ip link show wlan0 2>/dev/null | awk '/ether/{print $2}'")
-  if mac and mac ~= "ff:ff:ff:ff:ff:ff" and mac ~= "00:00:00:00:00:00" then
-    local id = "dev_" .. mac:gsub(":", ""):sub(1, 12)
-    return id
+  local m = try("ip link show wlan0 | awk '/ether/{print $2}'")
+  if m and m ~= "ff:ff:ff:ff:ff:ff" and m ~= "00:00:00:00:00:00" then
+    return "dev_" .. m:gsub(":",""):sub(1,12)
   end
 
-  -- 3. boot_id (last resort — berubah tiap reboot!)
-  local boot = get("cat /proc/sys/kernel/random/boot_id 2>/dev/null")
-  if boot then
-    -- Hash boot_id jadi 8 hex
-    local hash = 0
-    for i = 1, #boot do
-      hash = (hash * 31 + string.byte(boot, i)) % 0xFFFFFFFF
-    end
-    return string.format("dev_boot%08x", hash)
+  -- 3. boot_id (last resort, berubah tiap reboot)
+  local b = try("cat /proc/sys/kernel/random/boot_id")
+  if b then
+    local h = 0
+    for i=1,#b do h=(h*31+b:byte(i))%0xFFFFFFFF end
+    return ("dev_boot%08x"):format(h)
   end
 
-  -- 4. Absolute fallback: waktu + random
+  -- 4. Random permanent fallback
   math.randomseed(os.time())
-  return string.format("dev_rand%08x", math.random(0, 0xFFFFFFFF))
+  return ("dev_rand%08x"):format(math.random(0,0xFFFFFFFF))
 end
 
 local function get_device_id()
-  -- Baca dari file permanen dulu
-  local f = io.open(CONFIG.device_id_file, "r")
+  local f = io.open(DEVICE_ID_FILE, "r")
   if f then
     local id = f:read("*l"); f:close()
-    if id and id ~= "" then return id end
+    if id and id:match("^dev_") then return id end
   end
-
-  -- Generate baru
-  local id = generate_device_id()
-  local fw = io.open(CONFIG.device_id_file, "w")
-  if fw then
-    fw:write(id .. "\n"); fw:close()
-    print("[*] Device ID baru dibuat : " .. id)
-    print("    Sumber                : ro.serialno / MAC / boot_id")
-    print("    Tersimpan di          : " .. CONFIG.device_id_file)
-    print("    Edit file tsb jika ID bentrok dengan device lain.")
-  else
-    print("[!] Tidak bisa simpan device ID — pakai sementara: " .. id)
-  end
+  local id = make_device_id()
+  local fw = io.open(DEVICE_ID_FILE, "w")
+  if fw then fw:write(id.."\n"); fw:close() end
   return id
 end
 
--- ─────────────────────────────────────────
--- auto_rejoin.conf
--- ─────────────────────────────────────────
+-- ══════════════════════════════════════════════════════
+--  AUTO_REJOIN.CONF — baca & tulis preserving key order
+-- ══════════════════════════════════════════════════════
 
 local function read_conf()
-  local f = io.open(CONFIG.conf_path, "r")
-  if not f then return {}, {} end
   local map, order = {}, {}
+  local f = io.open(CONF_PATH, "r")
+  if not f then return map, order end
   for line in f:lines() do
-    local k, v = line:match("^([^=]+)=(.*)$")
+    local k, v = line:match("^([^=#][^=]-)=(.*)$")
     if k then
       if not map[k] then table.insert(order, k) end
       map[k] = v
@@ -158,209 +122,267 @@ local function read_conf()
 end
 
 local function write_conf(map, order)
-  local f = io.open(CONFIG.conf_path, "w")
+  local f = io.open(CONF_PATH, "w")
   if not f then return false end
   local done = {}
   for _, k in ipairs(order) do
-    f:write(k .. "=" .. tostring(map[k] or "") .. "\n")
+    f:write(k.."="..(map[k] or "").."\n")
     done[k] = true
   end
-  for k, v in pairs(map) do
-    if not done[k] then f:write(k .. "=" .. tostring(v) .. "\n") end
+  for k,v in pairs(map) do
+    if not done[k] then f:write(k.."="..tostring(v).."\n") end
   end
   f:close()
   return true
 end
 
-local function set_conf_deeplink(link)
+-- Template default kalau conf belum ada sama sekali
+local CONF_DEFAULT = [[enabled=1
+deeplink=
+place_id=121864768012064
+interval=100
+launch_delay=120
+packages=com.roblox.client
+shared_links_count=0
+webhook_enabled=0
+webhook_url=
+webhook_interval=120
+webhook_message_id=
+rejoin_webhook_enabled=0
+rejoin_webhook_url=
+key_expired_webhook_enabled=0
+key_expired_webhook_url=
+device_label=
+autoboot_enabled=0
+auto_resume_enabled=0
+scheduled_rejoin_enabled=1
+scheduled_rejoin_interval=10
+scheduled_rejoin_randomize=1
+scheduled_rejoin_min=600
+scheduled_rejoin_max=720
+clear_cache_enabled=1
+clear_cache_interval=60
+auto_arrange_enabled=1
+arrange_preset=grid
+arrange_window_width=169
+arrange_window_height=127
+teleport_detection_enabled=1
+auto_use_backup_enabled=0
+auto_solve_captcha_enabled=1
+launch_banned_enabled=0
+auto_reactivate_enabled=1
+winterhub_api_key=
+]]
+
+local function ensure_conf_exists()
+  -- 1. Pastikan folder ada
+  local folder = CONF_PATH:match("^(.*)/[^/]+$")
+  if folder then
+    local ok = os.execute('mkdir -p "' .. folder .. '" 2>/dev/null')
+    if ok ~= 0 and ok ~= true then
+      -- mkdir gagal (mungkin butuh permission storage)
+      io.write("[!] Tidak bisa buat folder: "..folder.."\n")
+      io.write("    Jalankan: termux-setup-storage\n")
+      return false
+    end
+  end
+
+  -- 2. Cek apakah file ada
+  local f = io.open(CONF_PATH, "r")
+  if f then f:close(); return true end
+
+  -- 3. File belum ada → buat dengan template default
+  io.write("[*] auto_rejoin.conf belum ada — membuat file baru...\n")
+  local fw = io.open(CONF_PATH, "w")
+  if not fw then
+    io.write("[!] Gagal buat file conf. Cek permission storage.\n")
+    io.write("    Jalankan: termux-setup-storage\n")
+    return false
+  end
+  fw:write(CONF_DEFAULT)
+  fw:close()
+  io.write("[+] auto_rejoin.conf dibuat: "..CONF_PATH.."\n")
+  return true
+end
+
+local function set_deeplink(link)
+  -- Pastikan file & folder ada sebelum tulis
+  if not ensure_conf_exists() then return false end
+
   local map, order = read_conf()
-  -- Pastikan key 'deeplink' ada di order (sisipkan setelah 'enabled')
-  local found = false
-  for _, k in ipairs(order) do if k == "deeplink" then found = true end end
-  if not found then
-    local o2 = {}
+  -- Sisipkan 'deeplink' setelah 'enabled' kalau belum ada
+  if not map["deeplink"] then
+    local o2, inserted = {}, false
     for _, k in ipairs(order) do
       table.insert(o2, k)
-      if k == "enabled" then table.insert(o2, "deeplink") end
+      if k == "enabled" and not inserted then
+        table.insert(o2, "deeplink")
+        inserted = true
+      end
     end
+    if not inserted then table.insert(o2, 1, "deeplink") end
     order = o2
   end
   map["deeplink"] = link
   return write_conf(map, order)
 end
 
--- ─────────────────────────────────────────
--- State lokal
--- ─────────────────────────────────────────
+-- ══════════════════════════════════════════════════════
+--  STATE LOKAL — ingat link yang sudah di-claim
+-- ══════════════════════════════════════════════════════
 
-local function save_state(d)
-  local f = io.open(CONFIG.state_file, "w")
+local function save_state(t)
+  local f = io.open(STATE_FILE, "w")
   if not f then return end
-  for k, v in pairs(d) do f:write(k .. "=" .. tostring(v) .. "\n") end
+  for k,v in pairs(t) do f:write(k.."="..tostring(v).."\n") end
   f:close()
 end
 
 local function load_state()
-  local f = io.open(CONFIG.state_file, "r")
+  local f = io.open(STATE_FILE, "r")
   if not f then return nil end
   local s = {}
   for line in f:lines() do
-    local k, v = line:match("^([^=]+)=(.*)$")
-    if k then s[k] = v end
+    local k,v = line:match("^([^=]+)=(.+)$")
+    if k then s[k]=v end
   end
   f:close()
-  return (s.best_link and s.best_link ~= "") and s or nil
+  return (s.best_link and s.best_link~="") and s or nil
 end
 
-local function clear_state() os.remove(CONFIG.state_file) end
+-- ══════════════════════════════════════════════════════
+--  MAIN — one-shot auto claim
+-- ══════════════════════════════════════════════════════
 
--- ─────────────────────────────────────────
--- Commands
--- ─────────────────────────────────────────
+local DEVICE = get_device_id()
 
-local function cmd_claim(dev)
-  print("[*] Device ID : " .. dev)
+io.write("\n")
+io.write("┌─────────────────────────────────────┐\n")
+io.write("│     Private Server Auto Claim        │\n")
+io.write("└─────────────────────────────────────┘\n")
+io.write("  Device  : "..DEVICE.."\n")
+io.write("  Server  : "..SERVER_URL.."\n")
+io.write("  Conf    : "..CONF_PATH.."\n\n")
 
-  -- Jitter awal: penting saat sync mode (semua device start bersamaan)
-  -- Tiap device akan delay 0–2 detik secara acak sebelum hit server
-  local init_jitter = random_jitter(0, 2000)
-  if init_jitter > 100 then
-    io.write(string.format("[*] Sync jitter: tunggu %.1f detik...\n", init_jitter/1000))
-    sleep_ms(init_jitter)
-  end
-
-  print("[*] Claim link dari server...")
-
-  local url = CONFIG.server_url .. "/claim?device=" .. dev
-
-  for attempt = 1, CONFIG.max_retries do
-    local resp = curl_get(url)
-    if resp == "" then
-      print("[ERROR] Tidak bisa koneksi ke server. Cek server_url.")
-      return
-    end
-
-    if json_bool(resp, "ok") then
-      local name      = json_str(resp, "name")      or "-"
-      local link      = json_str(resp, "link")      or ""
-      local deeplink  = json_str(resp, "deeplink")  or ""
-      local best_link = json_str(resp, "best_link") or deeplink or link
-      local claimed_at= json_str(resp, "claimed_at") or "-"
-      local status_v  = json_str(resp, "status")    or "claimed"
-      local remaining = json_num(resp, "pool_remaining")
-
-      print("[+] Status     : " .. status_v)
-      print("[+] Name       : " .. name)
-      if link ~= "" then
-        print("[+] Share Link : " .. link)
-      end
-      if deeplink ~= "" then
-        print("[+] Deeplink   : " .. deeplink)
-      end
-      print("[+] → Dipakai  : " .. best_link)
-      print("[+] Waktu      : " .. claimed_at)
-      if remaining then
-        print("[+] Sisa pool  : " .. remaining)
-      end
-
-      save_state({ device=dev, name=name, link=link,
-                   deeplink=deeplink, best_link=best_link,
-                   claimed_at=claimed_at })
-
-      if best_link ~= "" then
-        if set_conf_deeplink(best_link) then
-          print("[+] auto_rejoin.conf ✓ diupdate")
-        else
-          print("[!] Gagal tulis conf — salin manual:")
-          print("    deeplink=" .. best_link)
-        end
-      end
-      return
-
-    else
-      local err = json_str(resp, "error") or resp
-      local pool_empty = resp:find("Pool kosong") or resp:find("503")
-      if pool_empty and attempt < CONFIG.max_retries then
-        local jitter = random_jitter(CONFIG.retry_min_ms, CONFIG.retry_max_ms)
-        print(string.format("[~] Pool sibuk. Retry %d/%d in %.1fs...",
-              attempt, CONFIG.max_retries, jitter/1000))
-        sleep_ms(jitter)
-      else
-        print("[ERROR] " .. tostring(err))
-        return
-      end
-    end
-  end
-
-  print("[ERROR] Gagal claim setelah " .. CONFIG.max_retries .. "x percobaan.")
-end
-
-local function cmd_release(dev)
-  print("[*] Release link untuk: " .. dev)
-  local resp = curl_get(CONFIG.server_url .. "/release?device=" .. dev)
-  if resp == "" then print("[ERROR] Tidak bisa koneksi.") return end
-
-  if json_bool(resp, "ok") then
-    print("[+] Released: " .. (json_str(resp, "released") or "-"))
-    local map, order = read_conf()
-    map["deeplink"] = ""
-    write_conf(map, order)
-    clear_state()
-    print("[+] auto_rejoin.conf deeplink dikosongkan.")
+-- Cek apakah device sudah punya link aktif (idempotent re-run)
+local existing = load_state()
+if existing then
+  io.write("[~] Device sudah punya link aktif:\n")
+  io.write("    Name     : "..(existing.name or "-").."\n")
+  io.write("    Link     : "..(existing.best_link or "-").."\n")
+  io.write("    Claimed  : "..(existing.claimed_at or "-").."\n\n")
+  io.write("[*] Re-apply ke auto_rejoin.conf...\n")
+  if set_deeplink(existing.best_link) then
+    io.write("[+] auto_rejoin.conf ✓ OK (re-applied)\n")
   else
-    print("[ERROR] " .. (json_str(resp, "error") or resp))
+    io.write("[!] Gagal tulis conf. Manual:\n")
+    io.write("    deeplink="..existing.best_link.."\n")
+  end
+  io.write("\n[+] SELESAI\n")
+  os.exit(0)
+end
+
+-- Jitter awal: distribusikan request saat sync mode
+-- Semua device start bersamaan → tiap device delay acak 0–3 detik
+local jit = jitter(0, 3000)
+if jit > 50 then
+  io.write(string.format("[*] Jitter: %.1f detik (anti-collision sync mode)...\n", jit/1000))
+  sleep_ms(jit)
+end
+
+-- Claim loop dengan retry + backoff
+local url = SERVER_URL.."/claim?device="..DEVICE
+local claimed = false
+
+for attempt = 1, MAX_RETRIES do
+  io.write(string.format("[*] Attempt %d/%d — claim...\n", attempt, MAX_RETRIES))
+
+  local resp = curl(url)
+
+  if resp == "" then
+    io.write("[!] Tidak bisa konek ke server (timeout/down).\n")
+    if attempt < MAX_RETRIES then
+      local w = jitter(1000, 4000)
+      io.write(string.format("[~] Retry dalam %.1f detik...\n", w/1000))
+      sleep_ms(w)
+    end
+
+  elseif jbool(resp, "ok") then
+    -- Berhasil claim
+    local name       = jstr(resp, "name")       or "-"
+    local link       = jstr(resp, "link")       or ""
+    local deeplink   = jstr(resp, "deeplink")   or ""
+    local best_link  = jstr(resp, "best_link")  or deeplink or link
+    local claimed_at = jstr(resp, "claimed_at") or "-"
+    local status_v   = jstr(resp, "status")     or "claimed"
+    local remaining  = jnum(resp, "pool_remaining")
+
+    io.write("\n")
+    io.write("  Status     : "..status_v.."\n")
+    io.write("  Name       : "..name.."\n")
+    if deeplink ~= "" then
+      io.write("  Deeplink   : "..deeplink.."\n")
+    else
+      io.write("  Share Link : "..link.."\n")
+    end
+    io.write("  → Dipakai  : "..best_link.."\n")
+    io.write("  Waktu      : "..claimed_at.."\n")
+    if remaining then
+      io.write("  Sisa pool  : "..remaining.."\n")
+    end
+    io.write("\n")
+
+    -- Simpan state lokal
+    save_state({
+      device     = DEVICE,
+      name       = name,
+      link       = link,
+      deeplink   = deeplink,
+      best_link  = best_link,
+      claimed_at = claimed_at
+    })
+
+    -- Tulis ke auto_rejoin.conf
+    if best_link ~= "" then
+      if set_deeplink(best_link) then
+        io.write("[+] auto_rejoin.conf ✓ diupdate\n")
+      else
+        io.write("[!] Gagal tulis conf — salin manual:\n")
+        io.write("    deeplink="..best_link.."\n")
+      end
+    else
+      io.write("[!] Link kosong — conf tidak diubah.\n")
+    end
+
+    claimed = true
+    break
+
+  else
+    -- Gagal: cek jenis error
+    local err = jstr(resp, "error") or ""
+    local is_empty = resp:find("Pool kosong") or resp:find("503") or resp:find("pool")
+
+    if is_empty and attempt < MAX_RETRIES then
+      local w = jitter(RETRY_MIN_MS, RETRY_MAX_MS)
+      io.write(string.format("[~] Pool sibuk. Retry %d/%d dalam %.1f detik...\n",
+               attempt, MAX_RETRIES, w/1000))
+      sleep_ms(w)
+    else
+      io.write("[ERROR] "..err.."\n")
+      if attempt < MAX_RETRIES then
+        local w = jitter(500, 2000)
+        sleep_ms(w)
+      end
+    end
   end
 end
 
-local function cmd_status()
-  print("[*] Status server...")
-  local resp = curl_get(CONFIG.server_url .. "/status")
-  if resp == "" then print("[ERROR] Tidak bisa koneksi.") return end
-  print("\n=== SERVER STATUS ===\n" .. resp)
+io.write("\n")
+if claimed then
+  io.write("[+] SELESAI — WinterHub siap dijalankan.\n")
+else
+  io.write("[!] GAGAL claim setelah "..MAX_RETRIES.."x percobaan.\n")
+  io.write("    Cek: "..SERVER_URL.."/status\n")
+  io.write("    Atau import ulang: "..SERVER_URL.."/import\n")
 end
-
-local function cmd_show(dev)
-  local s = load_state()
-  if not s then
-    print("[~] Device " .. dev .. " belum punya link aktif (state lokal kosong).")
-    print("    Cek server: lua client.lua status")
-    return
-  end
-  print("=== LINK AKTIF ===")
-  print("  Device     : " .. (s.device or dev))
-  print("  Name       : " .. (s.name or "-"))
-  print("  Share Link : " .. (s.link or "-"))
-  print("  Deeplink   : " .. (s.deeplink or "-"))
-  print("  → Dipakai  : " .. (s.best_link or "-"))
-  print("  Claimed at : " .. (s.claimed_at or "-"))
-end
-
-local function cmd_help(dev)
-  print("Usage: lua client.lua <claim|release|status|show|help>")
-  print("")
-  print("  claim    Ambil link dari pool → tulis auto_rejoin.conf")
-  print("  release  Kembalikan link ke pool")
-  print("  status   Status server (pool, used, dll)")
-  print("  show     Link aktif device ini")
-  print("")
-  print("Device ID   : " .. dev)
-  print("ID file     : " .. CONFIG.device_id_file)
-  print("Server URL  : " .. CONFIG.server_url)
-  print("")
-  print("Kalau 2 device dapat ID sama (cloud phone identik),")
-  print("edit file ID-nya: nano " .. CONFIG.device_id_file)
-end
-
--- ─────────────────────────────────────────
--- Main
--- ─────────────────────────────────────────
-
-local DEVICE_ID = get_device_id()
-local cmd = (arg or {})[1] or "help"
-
-if     cmd == "claim"   then cmd_claim(DEVICE_ID)
-elseif cmd == "release" then cmd_release(DEVICE_ID)
-elseif cmd == "status"  then cmd_status()
-elseif cmd == "show"    then cmd_show(DEVICE_ID)
-else                         cmd_help(DEVICE_ID)
-end
+io.write("\n")
