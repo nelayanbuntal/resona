@@ -16,7 +16,7 @@
 --  KONFIGURASI — ubah SERVER_URL sesuai cs50.dev kamu
 -- ══════════════════════════════════════════════════════
 
-local SERVER_URL     = "https://bookish-computing-machine-g4v964w7xxg739v96-5000.app.github.dev"
+local SERVER_URL     = "https://bookish-computing-machine-g4v9647xg739v96-5000.app.github.dev"
 local CONF_PATH      = "/storage/emulated/0/Download/WinterHub/auto_rejoin.conf"
 local DEVICE_ID_FILE = "/data/data/com.termux/files/home/.device_id"
 local STATE_FILE     = "/data/data/com.termux/files/home/.ps_state"
@@ -53,8 +53,31 @@ end
 local function jstr(t, k)  return t:match('"'..k..'":%s*"([^"]*)"') end
 local function jnum(t, k)  local v = t:match('"'..k..'":%s*(%d+)'); return v and tonumber(v) end
 local function jbool(t, k)
-  local v = t:match('"'..k..'":%s*(true|false)')
-  return v == "true" and true or (v == "false" and false or nil)
+  -- Cari pattern "key": true atau "key": false (dengan variasi whitespace)
+  local v = t:match('"'..k..'":%s*(true)')
+  if v then return true end
+  v = t:match('"'..k..'":%s*(false)')
+  if v then return false end
+  -- Fallback: cek apakah key ada dengan nilai 1 atau 0
+  v = t:match('"'..k..'":%s*([01])[^%d]')
+  if v == "1" then return true end
+  if v == "0" then return false end
+  return nil
+end
+
+-- Cek response sukses: ok=true ATAU ada field "status"/"name" (claim berhasil)
+local function is_ok(resp)
+  if jbool(resp, "ok") == true then return true end
+  -- Fallback: kalau ada "name" dan "link" di response, berarti berhasil
+  if jstr(resp, "name") and jstr(resp, "status") then return true end
+  return false
+end
+
+local function is_pool_empty(resp)
+  return resp:find("Pool kosong") ~= nil
+      or resp:find("pool") ~= nil
+      or resp:find('"ok":false') ~= nil
+      or resp:find('"ok": false') ~= nil
 end
 
 -- ══════════════════════════════════════════════════════
@@ -307,7 +330,7 @@ for attempt = 1, MAX_RETRIES do
       sleep_ms(w)
     end
 
-  elseif jbool(resp, "ok") then
+  elseif is_ok(resp) then
     -- Berhasil claim
     local name       = jstr(resp, "name")       or "-"
     local link       = jstr(resp, "link")       or ""
@@ -360,7 +383,7 @@ for attempt = 1, MAX_RETRIES do
   else
     -- Gagal: cek jenis error
     local err = jstr(resp, "error") or ""
-    local is_empty = resp:find("Pool kosong") or resp:find("503") or resp:find("pool")
+    local is_empty = is_pool_empty(resp)
 
     if is_empty and attempt < MAX_RETRIES then
       local w = jitter(RETRY_MIN_MS, RETRY_MAX_MS)
