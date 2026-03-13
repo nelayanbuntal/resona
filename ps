@@ -16,13 +16,13 @@
 --  KONFIGURASI — ubah SERVER_URL sesuai cs50.dev kamu
 -- ══════════════════════════════════════════════════════
 
-local SERVER_URL     = "https://bookish-computing-machine-g4v964w7xxg739v96-5000.app.github.dev
+local SERVER_URL     = "https://bookish-computing-machine-g4v964w7xxg739v96-5000.app.github.dev"
 local CONF_PATH      = "/storage/emulated/0/Download/WinterHub/auto_rejoin.conf"
 local DEVICE_ID_FILE = "/data/data/com.termux/files/home/.device_id"
 local STATE_FILE     = "/data/data/com.termux/files/home/.ps_state"
-local MAX_RETRIES    = 8
-local RETRY_MIN_MS   = 300
-local RETRY_MAX_MS   = 2500
+local MAX_RETRIES    = 10
+local RETRY_MIN_MS   = 500
+local RETRY_MAX_MS   = 3000
 
 -- ══════════════════════════════════════════════════════
 --  UTILS
@@ -46,7 +46,8 @@ local function jitter(lo, hi)
 end
 
 local function curl(url)
-  return exec(string.format('curl -s --max-time 15 --retry 2 "%s"', url))
+  return exec(string.format(
+    'curl -s --max-time 20 --connect-timeout 10 --retry 1 "%s"', url))
 end
 
 -- JSON mini-parser (tidak butuh library eksternal)
@@ -305,11 +306,11 @@ if existing then
   os.exit(0)
 end
 
--- Jitter awal: distribusikan request saat sync mode
--- Semua device start bersamaan → tiap device delay acak 0–3 detik
-local jit = jitter(0, 3000)
+-- Jitter awal untuk 50 device:
+-- Window 10 detik → rata-rata 1 device per 200ms → server bisa napas
+local jit = jitter(0, 10000)
 if jit > 50 then
-  io.write(string.format("[*] Jitter: %.1f detik (anti-collision sync mode)...\n", jit/1000))
+  io.write(string.format("[*] Jitter: %.1f detik (distribusi 50 device)...\n", jit/1000))
   sleep_ms(jit)
 end
 
