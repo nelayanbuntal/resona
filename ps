@@ -288,24 +288,6 @@ io.write("  Device  : "..DEVICE.."\n")
 io.write("  Server  : "..SERVER_URL.."\n")
 io.write("  Conf    : "..CONF_PATH.."\n\n")
 
--- Cek apakah device sudah punya link aktif (idempotent re-run)
-local existing = load_state()
-if existing then
-  io.write("[~] Device sudah punya link aktif:\n")
-  io.write("    Name     : "..(existing.name or "-").."\n")
-  io.write("    Link     : "..(existing.best_link or "-").."\n")
-  io.write("    Claimed  : "..(existing.claimed_at or "-").."\n\n")
-  io.write("[*] Re-apply ke auto_rejoin.conf...\n")
-  if set_deeplink(existing.best_link) then
-    io.write("[+] auto_rejoin.conf ✓ OK (re-applied)\n")
-  else
-    io.write("[!] Gagal tulis conf. Manual:\n")
-    io.write("    deeplink="..existing.best_link.."\n")
-  end
-  io.write("\n[+] SELESAI\n")
-  os.exit(0)
-end
-
 -- Jitter awal untuk 50 device:
 -- Window 10 detik → rata-rata 1 device per 200ms → server bisa napas
 local jit = jitter(0, 10000)
@@ -315,6 +297,7 @@ if jit > 50 then
 end
 
 -- Claim loop dengan retry + backoff
+-- SELALU call server - server yang handle idempotency (already_claimed)
 local url = SERVER_URL.."/claim?device="..DEVICE
 local claimed = false
 
