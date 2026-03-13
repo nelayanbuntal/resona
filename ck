@@ -20,7 +20,7 @@ local STATE_FILE     = "/data/data/com.termux/files/home/.cookies_state"
 local MAX_RETRIES    = 10
 local RETRY_MIN_MS   = 500
 local RETRY_MAX_MS   = 3000
-local COOKIES_NEEDED = 3
+local COOKIES_NEEDED = 4
 
 -- ══════════════════════════════════════════════════════
 --  UTILS
