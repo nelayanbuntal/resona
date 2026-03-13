@@ -16,7 +16,7 @@
 --  KONFIGURASI — ubah SERVER_URL sesuai cs50.dev kamu
 -- ══════════════════════════════════════════════════════
 
-local SERVER_URL     = "https://bookish-computing-machine-g4v964w7xxg739v96-5000.app.github.dev"
+local SERVER_URL     = "https://bookish-computing-machine-g4v964w7xxg739v96-5000.app.github.dev
 local CONF_PATH      = "/storage/emulated/0/Download/WinterHub/auto_rejoin.conf"
 local DEVICE_ID_FILE = "/data/data/com.termux/files/home/.device_id"
 local STATE_FILE     = "/data/data/com.termux/files/home/.ps_state"
@@ -385,15 +385,31 @@ for attempt = 1, MAX_RETRIES do
     local err = jstr(resp, "error") or ""
     local is_empty = is_pool_empty(resp)
 
-    if is_empty and attempt < MAX_RETRIES then
-      local w = jitter(RETRY_MIN_MS, RETRY_MAX_MS)
-      io.write(string.format("[~] Pool sibuk. Retry %d/%d dalam %.1f detik...\n",
-               attempt, MAX_RETRIES, w/1000))
-      sleep_ms(w)
+    if is_empty then
+      -- Pool kosong = permanen, tidak ada gunanya retry
+      io.write("\n")
+      io.write("╔══════════════════════════════════════════╗\n")
+      io.write("║  LINK HABIS — Device ini tidak kebagian  ║\n")
+      io.write("╚══════════════════════════════════════════╝\n")
+      io.write("\n")
+      io.write("  Jumlah link di pool tidak cukup untuk semua device.\n")
+      io.write("  Device ini tidak mendapat private server.\n")
+      io.write("\n")
+      io.write("  Solusi:\n")
+      io.write("  1. Generate link baru dengan genps.py\n")
+      io.write("  2. Upload hopper.json baru ke server\n")
+      io.write("  3. Jalankan: curl SERVER_URL/import\n")
+      io.write("  4. Run ps.lua lagi\n")
+      io.write("\n")
+      io.write("  Status pool: "..SERVER_URL.."/status\n")
+      io.write("\n")
+      os.exit(1)  -- exit code 1 = gagal, bisa dideteksi automation
     else
-      io.write("[ERROR] "..err.."\n")
+      io.write("[ERROR] "..(err ~= "" and err or resp).."\n")
       if attempt < MAX_RETRIES then
         local w = jitter(500, 2000)
+        io.write(string.format("[~] Retry %d/%d dalam %.1f detik...\n",
+                 attempt, MAX_RETRIES, w/1000))
         sleep_ms(w)
       end
     end
@@ -404,8 +420,8 @@ io.write("\n")
 if claimed then
   io.write("[+] SELESAI — WinterHub siap dijalankan.\n")
 else
-  io.write("[!] GAGAL claim setelah "..MAX_RETRIES.."x percobaan.\n")
-  io.write("    Cek: "..SERVER_URL.."/status\n")
-  io.write("    Atau import ulang: "..SERVER_URL.."/import\n")
+  -- Sampai sini berarti koneksi error berulang (bukan pool kosong)
+  io.write("[!] GAGAL koneksi ke server setelah "..MAX_RETRIES.."x percobaan.\n")
+  io.write("    Pastikan server berjalan: "..SERVER_URL.."\n")
 end
 io.write("\n")
