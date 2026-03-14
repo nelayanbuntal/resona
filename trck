@@ -1,29 +1,20 @@
--- ═══════════════════════════════════════════════════════════════════
---  autotrade.lua  (updated — kirim ke FishTracker dashboard)
--- ═══════════════════════════════════════════════════════════════════
-
 local RS          = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 local Players     = game:GetService("Players")
 local Replion     = require(RS.Packages.Replion)
 
--- ===== SETTING — GANTI INI =====
-local LOCAL_TEST  = false -- Set 'true' untuk tes di localhost, 'false' untuk domain asli
-local API_KEY     = "ft__aoc8CxomU7YoWfhffpNnUeSbQ05FGh1QoysXAAgorc"
-local INTERVAL    = 30
-
-local SERVER_URL  = LOCAL_TEST and "http://localhost:8080/api/report" or "https://siganteng.store/api/report"
--- ================================
+local LOCAL_TEST = false
+local API_KEY    = "ft__aoc8CxomU7YoWfhffpNnUeSbQ05FGh1QoysXAAgorc"
+local INTERVAL   = 30
+local SERVER_URL = LOCAL_TEST and "http://localhost:8080/api/report" or "https://siganteng.store/api/report"
 
 local DataReplion = Replion.Client:WaitReplion("Data")
 local LP          = Players.LocalPlayer
 local HWID        = tostring((gethwid or function() return "unknown" end)()):sub(1, 16)
+local ItemUtility = require(RS.Shared.ItemUtility)
 
 local function getInventory()
-    local ItemUtility = require(RS.Shared.ItemUtility)
-    local evo = 0
-    local secretTotal = 0
-    local rubyGem = 0
+    local evo, rubyGem = 0, 0
     local secretFish = {}
 
     for _, item in ipairs(DataReplion:Get({"Inventory", "Items"}) or {}) do
@@ -34,7 +25,6 @@ local function getInventory()
             local itemType  = tostring(data.Data.Type or "")
             local itemTier  = data.Data.Tier
             local variantId = tostring((item.Metadata and item.Metadata.VariantId) or "")
-            local matched   = false
 
             if itemType == "Fish" and (itemTier == 7 or name == "King Crab") then
                 local key = name .. "|" .. variantId
@@ -42,74 +32,224 @@ local function getInventory()
                     secretFish[key] = { name = name, qty = 0, variant = variantId }
                 end
                 secretFish[key].qty += qty
-                matched = true
             elseif itemTier == 5 and name == "Ruby" and variantId == "Gemstone" then
                 rubyGem += qty
-                matched = true
             elseif name == "Evolved Enchant Stone" then
                 evo += qty
-                matched = true
-            end
-
-            if not matched then
-                secretTotal += qty
             end
         end
     end
 
-    local secretList = {}
-    local secretCount = 0  -- ← tambah ini
+    local secretList, secretCount = {}, 0
     for _, info in pairs(secretFish) do
         table.insert(secretList, { name = info.name, qty = info.qty, variant = info.variant })
-        secretCount += info.qty  -- ← hitung total qty tier 7 saja
+        secretCount += info.qty
     end
     table.sort(secretList, function(a, b) return a.qty > b.qty end)
-
-return evo, secretList, rubyGem, secretCount
+    return evo, secretList, rubyGem, secretCount
 end
 
 local function getStatistics()
-    local ok, stats = pcall(function()
-        return DataReplion:Get({"Statistics"}) or {}
-    end)
+    local ok, stats = pcall(function() return DataReplion:Get({"Statistics"}) or {} end)
     if not ok then return {} end
+    local rarest = stats.RarestFishCaught or 0
+    local rarestDisplay = 0
+    if rarest > 0 then
+        rarestDisplay = math.floor(1 / rarest)
+    end
     return {
         fishCaught        = stats.FishCaught        or 0,
         monthlyFishCaught = stats.MonthlyFishCaught or 0,
         caughtSecrets     = stats.CaughtSecrets     or 0,
-        rarestFish        = math.floor(stats.RarestFishCaught or 0),
+        rarestFish        = rarestDisplay,
         monthlyLevel      = stats.MonthlyLevel      or 0,
     }
+end
+
+local function getCoins()
+    local ok, val = pcall(function() return DataReplion:Get({"Coins"}) end)
+    return (ok and tonumber(val)) or 0
+end
+
+local function getQuestInfo()
+    local ok, quests = pcall(function() return DataReplion:Get({"Quests"}) or {} end)
+    if not ok then return "", 0, 0, {} end
+
+    local questDefs = {}
+    local okDef, defs = pcall(function() return require(RS:FindFirstChild("Quests", true)) end)
+    if okDef and defs then questDefs = defs end
+
+    local mainline = (type(quests) == "table" and quests.Mainline) or {}
+    local allQuests = {}
+
+    for name, data in pairs(mainline) do
+        local def = questDefs.Mainline and questDefs.Mainline[name]
+        local reward = def and def.Reward or {}
+        local rewardType = type(reward) == "table" and (reward.Type or "") or ""
+        local isRodOrBait = rewardType == "Fishing Rods" or rewardType == "Baits"
+        local objs = data.Objectives or {}
+        local defObjs = (def and def.Objectives) or {}
+
+        -- Hitung done dari progress vs goal
+        local doneCount = 0
+        for i, obj in ipairs(objs) do
+            local defObj = defObjs[i] or {}
+            local goal = defObj.Goal or 0
+            local prog = obj.Progress or 0
+            if goal > 0 and prog >= goal then
+                doneCount += 1
+            end
+        end
+
+        table.insert(allQuests, {
+            name        = name,
+            ts          = data.Timestamp or 0,
+            done        = doneCount,
+            total       = #objs,
+            objectives  = objs,
+            def         = def,
+            defObjs     = defObjs,
+            isRodOrBait = isRodOrBait,
+        })
+    end
+
+    -- Sort: rod/bait dulu, lalu timestamp terbaru
+    table.sort(allQuests, function(a, b)
+        if a.isRodOrBait ~= b.isRodOrBait then return a.isRodOrBait end
+        return a.ts > b.ts
+    end)
+
+    local best = allQuests[1]
+    if not best then return "", 0, 0, {} end
+
+    -- Build objectives
+    local objectives = {}
+    for i, obj in ipairs(best.objectives) do
+        local defObj = best.defObjs[i] or {}
+        local goal = defObj.Goal or 0
+        local prog = obj.Progress or 0
+        table.insert(objectives, {
+            id       = obj.Id or i,
+            name     = defObj.Name or ("Objective " .. i),
+            progress = prog,
+            goal     = goal,
+            done     = (goal > 0 and prog >= goal),
+        })
+    end
+
+    return best.name, best.done, best.total, objectives
+end
+
+local function getLocation()
+    local ok, location = pcall(function()
+        local LP = game:GetService("Players").LocalPlayer
+        return LP.PlayerGui.Events.Frame.Location.Label.Text
+    end)
+    if ok and location and location ~= "" then
+        return location
+    end
+    -- Fallback ke Locations array
+    local ok2, locs = pcall(function() return DataReplion:Get({"Locations"}) or {} end)
+    if ok2 and type(locs) == "table" and #locs > 0 then
+        return locs[#locs]
+    end
+    return "Unknown"
+end
+
+local function getEquippedRod()
+    local ok1, equippedItems = pcall(function() return DataReplion:Get({"EquippedItems"}) or {} end)
+    if not ok1 then return "Unknown", {}, {} end
+
+    local ok2, rods = pcall(function() return DataReplion:Get({"Inventory", "Fishing Rods"}) or {} end)
+    if not ok2 then return "Unknown", {}, {} end
+
+    for _, rod in ipairs(rods) do
+        local rodUUID = tostring(rod.UUID or "")
+        for _, eUUID in ipairs(equippedItems) do
+            if rodUUID == tostring(eUUID) then
+                local ok3, data = pcall(function() return ItemUtility:GetItemData(rod.Id) end)
+                if not (ok3 and data) then return "Unknown", {}, {} end
+
+                local rodName = data.Data and data.Data.Name or "Unknown"
+                local tier    = data.Data and data.Data.Tier or 0
+                local icon    = data.Data and data.Data.Icon or ""
+                local luck    = math.floor((data.RollData and data.RollData.BaseLuck or 0) * 100)
+                local speed   = math.floor((data.VisualClickPowerPercent or 0) * 100)
+                local weight  = data.MaxWeight or 0
+
+                local tierNames = {"Common","Uncommon","Rare","Epic","Legendary","Mythic","Secret"}
+                local tierName  = tierNames[tier] or "Unknown"
+
+                local enchants = {}
+                local meta = rod.Metadata or {}
+                for _, field in ipairs({"EnchantId", "EnchantId2"}) do
+                    local enchantId = meta[field]
+                    if enchantId and enchantId > 0 then
+                        local ok4, enchData = pcall(function() return ItemUtility:GetEnchantData(enchantId) end)
+                        if ok4 and enchData and enchData.Data then
+                            table.insert(enchants, {
+                                name = enchData.Data.Name,
+                                desc = enchData.Data.Description or "",
+                            })
+                        end
+                    end
+                end
+
+                local rodInfo = {
+                    name    = rodName,
+                    tier    = tierName,
+                    icon    = icon,
+                    luck    = luck,
+                    speed   = speed,
+                    weight  = weight,
+                }
+
+                return rodName, enchants, rodInfo
+            end
+        end
+    end
+    return "Unknown", {}, {}
 end
 
 local function postToServer(evo, secretList, rubyGem, secretTotal)
     local serverId = tostring(game.JobId):sub(1, 8)
     local stats    = getStatistics()
+    local coins    = getCoins()
+    local questName, questDone, questTotal, questObjs = getQuestInfo()
+    local location    = getLocation()
+    local equippedRod, rodEnchants, rodInfo = getEquippedRod()
+
     local ok, result = pcall(function()
         return request({
             Url     = SERVER_URL,
             Method  = "POST",
-            Headers = {
-                ["Content-Type"] = "application/json",
-                ["X-API-Key"]    = API_KEY,   -- ← TAMBAHAN
-            },
+            Headers = { ["Content-Type"] = "application/json", ["X-API-Key"] = API_KEY },
             Body    = HttpService:JSONEncode({
-                player      = LP.Name,
-                hwid        = HWID,
-                serverId    = serverId,
-                evo         = evo,
-                secrets     = secretList,
-                ruby_gem    = rubyGem,
-                secretTotal = secretTotal,
-                stats       = (next(stats) ~= nil) and stats or nil,
+                player           = LP.Name,
+                hwid             = HWID,
+                serverId         = serverId,
+                evo              = evo,
+                secrets          = secretList,
+                ruby_gem         = rubyGem,
+                secretTotal      = secretTotal,
+                stats            = (next(stats) ~= nil) and stats or nil,
+                coins            = coins,
+                quest_name       = questName,
+                quest_done       = questDone,
+                quest_total      = questTotal,
+                quest_objectives = questObjs,
+                location         = location,
+                equipped_rod     = equippedRod,
+                rod_enchants     = rodEnchants,
+                rod_info         = rodInfo,
             })
         })
     end)
     if ok and result and result.StatusCode == 200 then
-        print(string.format("[Inv] ✅ Sent | EVO=%d | T7=%d | Ruby=%d", evo, #secretList, rubyGem))
+        print(string.format("[FishTracker] ✅ %s | EVO=%d | Secret=%d | Rod=%s | Loc=%s",
+            LP.Name, evo, secretTotal, equippedRod, location))
     else
-        warn("[Inv] ❌ Error:", tostring(result and result.StatusCode or result))
-        warn("[Inv] Body:", tostring(result and result.Body or "No Body"))
+        warn("[FishTracker] ❌ Error:", tostring(result and result.StatusCode or result))
     end
 end
 
