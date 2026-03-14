@@ -9,7 +9,7 @@ local Replion     = require(RS.Packages.Replion)
 
 -- ===== SETTING — GANTI INI =====
 local LOCAL_TEST  = false -- Set 'true' untuk tes di localhost, 'false' untuk domain asli
-local API_KEY     = "ft_RqiNwhr-aRDumM35Cokt8OO4-DZZVO9U_WKhVndYGtM"
+local API_KEY     = "ft__aoc8CxomU7YoWfhffpNnUeSbQ05FGh1QoysXAAgorc"
 local INTERVAL    = 30
 
 local SERVER_URL  = LOCAL_TEST and "http://localhost:8080/api/report" or "https://siganteng.store/api/report"
