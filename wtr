@@ -84,7 +84,7 @@ _G.FishItConfig = _G.FishItConfig or {
         ["Auto Use"] = true,
         ["Minimum Rod"] = "Midnight Rod",
         ["Buy List"] = {
-            ["Mutation Totem"] = 100,
+            ["Mutation Totem"] = 500,
         },
     },
     ["Event"] = {
